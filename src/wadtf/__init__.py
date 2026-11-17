@@ -5,9 +5,32 @@
 import os
 import re  # tragedy
 import struct
+from collections.abc import Buffer
 from dataclasses import dataclass
 from enum import auto, Enum
-from typing import BinaryIO, cast, Self
+from typing import BinaryIO, cast, overload, Protocol, Self
+
+
+class SeekableReadableBinaryIO(Protocol):
+    def seek(self, offset: int, whence: int = 0, /) -> int: ...
+    def read(self, n: int = -1, /) -> bytes: ...
+    def tell(self) -> int: ...
+
+
+class WriteableBinaryIO(Protocol):
+    def write(self, data: Buffer, /) -> int: ...
+
+
+class InvalidLumpError(Exception):
+    """Something is wrong with a lump YOU defined and it's all YOUR fault because it cannot be serialized."""
+
+
+class UnserializableType(Exception):
+    """Tried to serialize an unserializable type like WADType.UNKNOWN."""
+
+
+class ReadTooHigh(Exception):
+    """Attempted to read over 1 GiB of data. Likely malicious WAD or corrupted directory/WAD."""
 
 
 class InvalidEntryError(Exception):
@@ -36,7 +59,8 @@ class LumpType(Enum):
 
 Intentionally excludes patches as its markers not actually used by engine and are unreliable."""
     NONE = auto()
-    """No other defined types apply to it"""
+    """No other defined types apply to it.
+Might still be of a type that isn't autodetected, such as an unrecognized marker or a type based on file contents or other lumps' contents, like patches!"""
     MARKER = auto()
     SPRITE = auto()
     FLAT = auto()
@@ -52,20 +76,38 @@ class Lump:
     contents: bytes
 
 
+def safe_read(f: SeekableReadableBinaryIO, num: int) -> bytes:
+    start: int = f.tell()
+    if num >= 2**30:
+        raise ReadTooHigh(f"Attempted to read {num} bytes (over 1GiB!). Malicious WAD? Corrupted headers? Wrong endianness? Is it even a WAD?")
+    data: bytes = f.read(num)
+    if len(data) < num:
+        raise EOFError(f"Expected {num} bytes but got {len(data)} bytes at {start}. Malicious WAD? Corrupted headers? Wrong endianness? Is it even a WAD?")
+    return data
+
+
 class WAD:
     """Mutable WAD object. Holds lumps and a WAD type, and can be serialized into a WAD file.
 
-Init args:
+Args:
+    stream: A seekable readable binary IO object, required. Wrap a bytes object around io.BytesIO() if you for some reason want to deserialize from bytes
+    dont_check_magic: A bool that specifies whether or not to check the first 4 bytes, defaults to False
+    big_endian: A bool that specifies whether to use big endian, defaults to False. Keep it False unless you know why you want this
 
-- stream: a seekable binary IO object, required
-- dont_check_magic: bool that specifies whether or not to check the first 4 bytes, defaults to False
-- big_endian: bool that specifies whether to use big endian, defaults to False. keep it False unless you know why you want this"""
+Returns:
+    None.
+
+Raises:
+    InvalidHeaderError: If there is something wrong with the header.
+    InvalidEntryError: If there is something wrong with an entry in the directory.
+    ReadTooHigh: If there was an attempt to read over 1 GiB of data.
+    EOFError: If EOF is unexpectedly reached."""
     lumps: list[Lump]
     """Key is index #. Starts at 0."""
     wad_type: WADType
     """Whether it's an IWAD or PWAD or unknown. Not actually checked by the engine lol lmao."""
 
-    def __init__(self, stream: BinaryIO | None, *, dont_check_magic: bool = False, big_endian: bool = False) -> None:
+    def __init__(self, stream: SeekableReadableBinaryIO | None, *, dont_check_magic: bool = False, big_endian: bool = False) -> None:
         int_temp: str = ">i" if big_endian else "<i"
         self.lumps = []
         if stream is None:
@@ -73,12 +115,9 @@ Init args:
             self.wad_type = WADType.PWAD
             return
 
-        if not stream.seekable():
-            raise UnseekableContents("stream is unseekable")
-
         stream.seek(0)
 
-        match stream.read(4):
+        match safe_read(stream, 4):
             case b"IWAD":
                 self.wad_type = WADType.IWAD
             case b"PWAD":
@@ -89,46 +128,56 @@ Init args:
                 else:
                     raise InvalidHeaderError(f"Not a WAD. Expected first 4 bytes to be 'IWAD' or 'PWAD', but got {unknown_id}.")
         
-        numlumps: int = cast(int, struct.unpack(int_temp, stream.read(4))[0])
+        numlumps: int = cast(int, struct.unpack(int_temp, safe_read(stream, 4))[0])
         
-        infotableofs: int = cast(int, struct.unpack(int_temp, stream.read(4))[0])
+        infotableofs: int = cast(int, struct.unpack(int_temp, safe_read(stream, 4))[0])
 
         stream.seek(0, os.SEEK_END)
         
         stream_length: int = stream.tell()
         
         if infotableofs < 12:
-            raise InvalidHeaderError(f"infotableofs is invalid ({infotableofs} is less than 16 and if naively read could start reading headers). Malicious WAD?")
+            raise InvalidHeaderError(
+                f"infotableofs is invalid ({infotableofs} is less than 16 and if naively read could start reading headers). Malicious WAD? Corrupted headers? Wrong endianness? Is it even a WAD?"
+            )
 
         if numlumps < 0:
-            raise InvalidHeaderError(f"numlumps is invalid ({numlumps} is negative which if naively read could start reading headers). Malicious WAD?")
+            raise InvalidHeaderError(
+                f"numlumps is invalid ({numlumps} is negative which if naively read could start reading headers). Malicious WAD? Corrupted headers? Wrong endianness? Is it even a WAD?"
+            )
 
         if infotableofs + (numlumps * 16) > stream_length:
-            raise InvalidHeaderError(f"numlumps is invalid (numlumps is {numlumps} which if naively read would exceed EOF). Malicious WAD?")
+            raise InvalidHeaderError(
+                f"numlumps is invalid (numlumps is {numlumps} which if naively read would exceed EOF). Malicious WAD? Corrupted headers? Wrong endianness? Is it even a WAD?"
+            )
         
         last_marker: bytes = b""
         
         for i in range(numlumps):
             stream.seek(infotableofs + i * 16)
-            filepos: int = cast(int, struct.unpack(int_temp, stream.read(4))[0])
-            size: int = cast(int, struct.unpack(int_temp, stream.read(4))[0])
-            name: bytes = stream.read(8)
+            filepos: int = cast(int, struct.unpack(int_temp, safe_read(stream, 4))[0])
+            size: int = cast(int, struct.unpack(int_temp, safe_read(stream, 4))[0])
+            name: bytes = safe_read(stream, 8)
             contents: bytes = b""
             if size != 0:
                 if size < 0:
-                    raise InvalidEntryError(f"Entry #{i} has a negative size ({size}) which if naively read would go backwards. Malicious WAD?")
+                    raise InvalidEntryError(
+                        f"Entry #{i} has a negative size ({size}) which if naively read would go backwards. Malicious WAD? Corrupted directory? Wrong endianness? Is it even a WAD?"
+                    )
                 if filepos < 12:
-                    raise InvalidEntryError(f"Entry #{i} has an invalid filepos ({filepos}) with a non-zero size. Malicious WAD?")
+                    raise InvalidEntryError(
+                        f"Entry #{i} has an invalid filepos ({filepos}) with a non-zero size. Malicious WAD? Corrupted directory? Wrong endianness? Is it even a WAD?"
+                    )
                 if filepos + size > stream_length:
                     raise InvalidEntryError(
-                        f"Entry #{i} has an invalid filepos ({filepos}) or size ({size}) which if naively read would read past EOF. Malicious WAD?"
+                        f"Entry #{i} has an invalid filepos ({filepos}) or size ({size}) which if naively read would read past EOF. Malicious WAD? Corrupted directory? Wrong endianness? Is it even a WAD?"
                     )
                 if filepos < infotableofs + (numlumps * 16) and filepos + size > infotableofs:
                     raise InvalidEntryError(
-                        f"Entry #{i} has a filepos ({filepos}) and size ({size}) which if naively read would read into the directory. Malicious WAD?"
+                        f"Entry #{i} has a filepos ({filepos}) and size ({size}) which if naively read would read into the directory. Malicious WAD? Corrupted directory? Wrong endianness? Is it even a WAD?"
                     )
                 stream.seek(filepos)
-                contents = stream.read(size)
+                contents = safe_read(stream, size)
             lump_type: LumpType = LumpType.NONE
             if size == 0:
                 try:
@@ -182,6 +231,66 @@ Will NOT match lumps with binary names. Use match_name() if you care about binar
             except UnicodeDecodeError:
                 continue
         return matches
+    
+    @overload
+    def serialize(self, stream: WriteableBinaryIO, *, big_endian: bool = False, magic: bytes | None = None) -> None: ...
+    @overload
+    def serialize(self, *, big_endian: bool = False, magic: bytes | None = None) -> bytes: ...
+    def serialize(self, stream: WriteableBinaryIO | None = None, *, big_endian: bool = False, magic: bytes | None = None) -> bytes | None:
+        """Serialize the WAD object and either return a bytes or write to an IO object.
+
+Args:
+    stream: An optional writeable binary IO object. If provided, the serialized data will be written to it.
+    big_endian: An optional bool that specifies whether to use big endian, defaults to False. Keep it False unless you know why you want this
+    magic: An optional bytes that specifies the 4-byte identification string at the start of the file and ignores the WAD type, defaults to None.
+
+Returns:
+    A bytes object if no stream was given, or None if a stream was given.
+
+Raises:
+    UnserializableType: If the WAD type is unserializable and magic was not provided.
+    ValueError: If magic is not 4 bytes."""
+        int_temp: str = ">i" if big_endian else "<i"
+
+        if magic is not None and len(magic) != 4:
+            raise ValueError("magic is not 4 bytes.")
+
+        data: bytearray = bytearray()
+
+        if magic is None:
+            match self.wad_type:
+                case WADType.IWAD:
+                    data += b"IWAD"
+                case WADType.PWAD:
+                    data += b"PWAD"
+                case unknown_type:
+                    raise UnserializableType(f"Expected a serializable WAD type but got {unknown_type}.")
+        else:
+            data += magic
+
+        data += struct.pack(int_temp, len(self.lumps))
+
+        all_the_cute_lump_data: bytes = b"".join([lump.contents for lump in self.lumps])
+
+        data += struct.pack(int_temp, len(all_the_cute_lump_data) + 12)
+
+        data += all_the_cute_lump_data
+        
+        current_pos = 12
+
+        for i, lump in enumerate(self.lumps):
+            data += struct.pack(int_temp, current_pos)
+            data += struct.pack(int_temp, len(lump.contents))
+            if len(lump.name) > 8:
+                raise InvalidLumpError(f"Name of lump index {i} is longer than 8 bytes")
+            data += struct.pack("8s", lump.name)
+            current_pos += len(lump.contents)
+        
+        if stream is not None:
+            stream.write(data)
+            return None
+
+        return bytes(data)
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, WAD):
