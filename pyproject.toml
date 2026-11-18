@@ -1,7 +1,7 @@
 [project]
 name = "wadtf"
 version = "1.0.0"
-description = "Pythonic OOP library to read & write WAD files"
+description = "Easy-to-use library to safely read, create, modify, and write WAD files"
 readme = "README.md"
 authors = [
     { name = "Butterroach", email = "butterroach@outlook.com" }
