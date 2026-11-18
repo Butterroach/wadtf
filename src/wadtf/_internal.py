@@ -2,6 +2,7 @@ import os
 import re  # tragedy
 import struct
 from collections.abc import Iterator
+from copy import deepcopy
 from types import TracebackType
 from typing import Self, cast
 from ._errors import *
@@ -30,7 +31,7 @@ Raises:
     EOFError: If EOF is unexpectedly reached."""
 
     lumps: list[Lump]
-    """Key is index #. Starts at 0."""
+    """Internal directory. You can directly modify this too instead of using the instance methods!"""
     wad_type: WADType
     """Whether it's an IWAD or PWAD or unknown. Not actually checked by the engine lol lmao."""
     __closed: bool = False
@@ -319,6 +320,72 @@ Raises:
         self.close()
         return False
 
+    def __getitem__(self, index: int | slice) -> Lump | list[Lump]:
+        if self.__closed:
+            raise ClosedWAD("Attempted to operate on a closed WAD")
+        return self.lumps[index]
+
+    def __setitem__(self, index: int, value: Lump) -> None:
+        if self.__closed:
+            raise ClosedWAD("Attempted to operate on a closed WAD")
+        self.lumps[index] = value
+
+    def __delitem__(self, index: int | slice) -> None:
+        if self.__closed:
+            raise ClosedWAD("Attempted to operate on a closed WAD")
+        del self.lumps[index]
+
+    def __add__(self, value: "WAD") -> "WAD":
+        if self.__closed:
+            raise ClosedWAD("Attempted to operate on a closed WAD")
+        instance: WAD = WAD()
+        instance.wad_type = self.wad_type
+        instance.lumps = self.lumps + value.lumps
+        return instance
+
+    def __contains__(self, lump: Lump) -> bool:
+        if self.__closed:
+            raise ClosedWAD("Attempted to operate on a closed WAD")
+        return lump in self.lumps
+
+    def append(self, lump: Lump) -> None:
+        """Append a lump to the end of the WAD"""
+        if self.__closed:
+            raise ClosedWAD("Attempted to operate on a closed WAD")
+        self.lumps.append(lump)
+    
+    def clear(self) -> None:
+        """Clear the WAD of all lumps"""
+        if self.__closed:
+            raise ClosedWAD("Attempted to operate on a closed WAD")
+        self.lumps.clear()
+
+    def copy(self) -> "WAD":
+        """Return a new copy of the WAD"""
+        if self.__closed:
+            raise ClosedWAD("Attempted to operate on a closed WAD")
+        instance: WAD = WAD()
+        instance.wad_type = self.wad_type
+        instance.lumps = deepcopy(self.lumps)
+        return instance
+
+    def extend(self, other: "WAD") -> None:
+        """Extend self with the lumps of another WAD"""
+        if self.__closed:
+            raise ClosedWAD("Attempted to operate on a closed WAD")
+        self.lumps.extend(other.lumps)
+
+    def insert(self, index: int, lump: Lump) -> None:
+        """Insert lump before index"""
+        if self.__closed:
+            raise ClosedWAD("Attempted to operate on a closed WAD")
+        self.lumps.insert(index, lump)
+
+    def pop(self, index: int = -1) -> Lump:
+        """Remove and return lump at index (default last), raising IndexError if index is out of range or the WAD is empty"""
+        if self.__closed:
+            raise ClosedWAD("Attempted to operate on a closed WAD")
+        return self.lumps.pop(index)
 
 def open_wad(path: int | str | bytes | os.PathLike[str] | os.PathLike[bytes], *, dont_check_magic: bool = False, big_endian: bool = False, read_large_files: bool = False) -> WAD:
     """Helper to open a file and deserialize it. See WAD for the keyword args."""
