@@ -3,10 +3,9 @@ import re  # tragedy
 import struct
 from collections.abc import Buffer, Iterator
 from dataclasses import dataclass
-from enum import auto, Enum
-from pathlib import Path
+from enum import Enum, auto
 from types import TracebackType
-from typing import BinaryIO, cast, overload, Protocol, Self, runtime_checkable
+from typing import Protocol, Self, cast, runtime_checkable
 
 
 @runtime_checkable
@@ -38,7 +37,7 @@ class UnserializableType(Exception):
 
 
 class ReadTooHigh(Exception):
-    """Attempted to read over 1 GiB of data. Likely malicious WAD or corrupted directory/WAD."""
+    """Attempted to read over 2GiB of data. Likely malicious WAD or corrupted directory/WAD."""
 
 
 class InvalidEntryError(Exception):
@@ -256,10 +255,7 @@ Will NOT match lumps with binary names. Use match_name() if you care about binar
             raise ClosedWAD("Attempted to operate on a closed WAD")
         s_name: str
         if isinstance(name, bytes):
-            try:
-                s_name = name.decode(errors="strict").casefold()
-            except UnicodeDecodeError:
-                raise  # lol
+            s_name = name.decode(errors="strict").casefold()
         else:
             s_name = name.casefold()
         matches = []
@@ -290,10 +286,7 @@ Will NOT match lumps with binary names. Use match_name() if you care about binar
             raise ClosedWAD("Attempted to operate on a closed WAD")
         s_name: str
         if isinstance(name, bytes):
-            try:
-                s_name = name.decode(errors="strict").casefold()
-            except UnicodeDecodeError:
-                raise  # lol
+            s_name = name.decode(errors="strict").casefold()
         else:
             s_name = name.casefold()
         for i, lump in enumerate(self.lumps):
@@ -364,11 +357,11 @@ Raises:
 
         return bytes(data)
 
-    def save_to(self, file: WriteableBinaryIO | int | str | bytes | os.PathLike[str] | os.PathLike[bytes], *, big_endian: bool = False, magic: bytes | None = None) -> None:
+    def save_to(self, file: WriteableBinaryIO | str | bytes | os.PathLike[str] | os.PathLike[bytes], *, big_endian: bool = False, magic: bytes | None = None) -> None:
         """Serializes and writes in one go.
 
 Args:
-    file_or_path: Either a writeable binary IO object, or an integer (file descriptor), or a string or bytes (file path), or a path-like object.
+    file_or_path: Either a writeable binary IO object, or a string or bytes (file path), or a path-like object.
     big_endian: An optional bool that specifies whether to use big endian, defaults to False. Keep it False unless you know why you want this
     magic: An optional bytes that specifies the 4-byte identification string at the start of the file and ignores the WAD type, defaults to None.
 
@@ -380,7 +373,7 @@ Raises:
     ValueError: If magic is not 4 bytes."""
         if self.__closed:
             raise ClosedWAD("Attempted to operate on a closed WAD")
-        if isinstance(file, (int, str, bytes, os.PathLike[str], os.PathLike[bytes])):
+        if isinstance(file, (str, bytes, os.PathLike[str], os.PathLike[bytes])):
             with open(file, "wb") as f:  # ty: ignore[no-matching-overload]  # ty is just stupid
                 f.write(self.serialize(big_endian=big_endian, magic=magic))
         else:
@@ -416,7 +409,7 @@ Raises:
             raise ClosedWAD("Attempted to operate on a closed WAD")
         return self  # lol
 
-    def __exit__(self, exc_type: type[BaseException] | None, exc_val: type[BaseException] | None, exc_tb: TracebackType | None):
+    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None):
         # cleanup!!! yay!!!
         if self.__closed:
             raise ClosedWAD("Attempted to operate on a closed WAD")
@@ -424,7 +417,7 @@ Raises:
         return False
 
 
-def open_wad(path: int | str | bytes | os.PathLike[str] | os.PathLike[bytes]) -> WAD:
-    """Helper to open a file and deserialize it."""
+def open_wad(path: int | str | bytes | os.PathLike[str] | os.PathLike[bytes], *, dont_check_magic: bool = False, big_endian: bool = False, read_large_files: bool = False) -> WAD:
+    """Helper to open a file and deserialize it. See WAD for the keyword args."""
     with open(path, "rb") as f:
-        return WAD(f)
+        return WAD(f, dont_check_magic=dont_check_magic, big_endian=big_endian, read_large_files=read_large_files)
