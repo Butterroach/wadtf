@@ -4,7 +4,7 @@ import struct
 from collections.abc import Iterator
 from copy import deepcopy
 from types import TracebackType
-from typing import Self, cast
+from typing import Self, cast, Literal, overload, SupportsIndex
 from ._errors import *
 from ._little_classes import *
 from ._helpers import *
@@ -27,7 +27,7 @@ Returns:
 Raises:
     InvalidHeaderError: If there is something wrong with the header.
     InvalidEntryError: If there is something wrong with an entry in the directory.
-    ReadTooHigh: If there was an attempt to read over 1 GiB of data.
+    ReadTooHigh: If there was an attempt to read over 2 GiB of data.
     EOFError: If EOF is unexpectedly reached."""
 
     lumps: list[Lump]
@@ -55,7 +55,7 @@ Raises:
                 if dont_check_magic:
                     self.wad_type = WADType.UNKNOWN
                 else:
-                    raise InvalidHeaderError(f"Not a WAD. Expected first 4 bytes to be 'IWAD' or 'PWAD', but got {unknown_id}.")
+                    raise InvalidHeaderError(f"Not a WAD. Expected first 4 bytes to be 'IWAD' or 'PWAD', but got {repr(unknown_id)}.")
         
         numlumps: int = cast(int, struct.unpack(int_temp, safe_read(stream, read_large_files, 4))[0])
         
@@ -111,9 +111,10 @@ Raises:
                 safe_seek(stream, stream_length, filepos)
                 contents = safe_read(stream, read_large_files, size)
             lump_type: LumpType = LumpType.NONE
+            s_name: str
             if size == 0:
                 try:
-                    s_name: str = name.rstrip(b"\x00").decode(errors="strict").upper()
+                    s_name = name.rstrip(b"\x00").decode(errors="strict").upper()
                     if s_name in ("F_START", "FF_START", "S_START", "SS_START", "F_END", "FF_END", "S_END", "SS_END") or re.fullmatch(r"E[0-9]M[0-9]|MAP[0-9]{2}", s_name):
                         last_marker = name
                         lump_type = LumpType.MARKER
@@ -121,7 +122,7 @@ Raises:
                     lump_type = LumpType.NONE
             else:
                 try:
-                    s_name: str = name.rstrip(b"\x00").decode(errors="strict").upper()
+                    s_name = name.rstrip(b"\x00").decode(errors="strict").upper()
                     s_last_marker: str = last_marker.rstrip(b'\x00').decode(errors="strict").upper()
                     if s_last_marker in ("F_START", "FF_START"):
                         lump_type = LumpType.FLAT
@@ -183,6 +184,7 @@ Will NOT match lumps with binary names. Use match_name() if you care about binar
         for i, lump in enumerate(self.lumps):
             if lump.name == b_name:
                 return i
+        return None
 
     def greedy_case_match_name(self, name: str | bytes) -> int | None:
         """Like greedy_case_match_name() but returns the first match immediately. Returns None if nothing is found."""
@@ -199,6 +201,7 @@ Will NOT match lumps with binary names. Use match_name() if you care about binar
                     return i
             except UnicodeDecodeError:
                 continue
+        return None
 
     def serialize(self, *, big_endian: bool = False, magic: bytes | bytearray | None = None) -> bytes:
         """Serialize the WAD object and return the data.
@@ -277,11 +280,11 @@ Raises:
     ValueError: If magic is not 4 bytes."""
         if self.__closed:
             raise ClosedWAD("Attempted to operate on a closed WAD")
-        if isinstance(file, (str, bytes, os.PathLike[str], os.PathLike[bytes])):
+        if isinstance(file, (str, bytes, os.PathLike)):
             with open(file, "wb") as f:  # ty: ignore[no-matching-overload]  # ty is just stupid
                 f.write(self.serialize(big_endian=big_endian, magic=magic))
         else:
-            file.write(self.serialize(big_endian=big_endian, magic=magic))  # ty: ignore[possibly-missing-attribute]  # ty is just stupid
+            file.write(self.serialize(big_endian=big_endian, magic=magic))
 
     def close(self) -> None:
         """Closes the WAD. Frees up memory. Be VERY careful not to operate on a closed WAD!"""
@@ -313,46 +316,64 @@ Raises:
             raise ClosedWAD("Attempted to operate on a closed WAD")
         return self  # lol
 
-    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None):
+    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None) -> Literal[False]:
         # cleanup!!! yay!!!
         if self.__closed:
             raise ClosedWAD("Attempted to operate on a closed WAD")
         self.close()
         return False
-
-    def __getitem__(self, index: int | slice) -> Lump | list[Lump]:
+    
+    @overload
+    def __getitem__(self, index: SupportsIndex) -> Lump: ...
+    @overload
+    def __getitem__(self, index: slice) -> list[Lump]: ...
+    def __getitem__(self, key: SupportsIndex | slice) -> Lump | list[Lump]:
+        if not isinstance(key, SupportsIndex | slice):
+            raise TypeError(f"key of type '{type(key)}' must be a slice, or interpretable as an integer")
         if self.__closed:
             raise ClosedWAD("Attempted to operate on a closed WAD")
-        return self.lumps[index]
+        return self.lumps[key]
 
-    def __setitem__(self, index: int, value: Lump) -> None:
+    def __setitem__(self, key: SupportsIndex, value: Lump) -> None:
+        if not isinstance(key, SupportsIndex | slice):
+            raise TypeError(f"key of type '{type(key)}' must be a slice, or interpretable as an integer")
+        if not isinstance(value, Lump):
+            raise TypeError(f"expected value of type Lump, got ''{type(value)}'")
         if self.__closed:
             raise ClosedWAD("Attempted to operate on a closed WAD")
-        self.lumps[index] = value
+        self.lumps[key] = value
 
-    def __delitem__(self, index: int | slice) -> None:
+    def __delitem__(self, key: SupportsIndex | slice) -> None:
+        if not isinstance(key, SupportsIndex | slice):
+            raise TypeError(f"key of type '{type(key)}' must be a slice, or interpretable as an integer")
         if self.__closed:
             raise ClosedWAD("Attempted to operate on a closed WAD")
-        del self.lumps[index]
+        del self.lumps[key]
 
-    def __add__(self, value: "WAD") -> "WAD":
+    def __add__(self, other: "WAD") -> "WAD":
+        if not isinstance(other, WAD):
+            return NotImplemented
         if self.__closed:
             raise ClosedWAD("Attempted to operate on a closed WAD")
         instance: WAD = WAD()
         instance.wad_type = self.wad_type
-        instance.lumps = self.lumps + value.lumps
+        instance.lumps = self.lumps + other.lumps
         return instance
 
-    def __contains__(self, lump: Lump) -> bool:
+    def __contains__(self, item: Lump) -> bool:
+        if not isinstance(item, Lump):
+            return False
         if self.__closed:
             raise ClosedWAD("Attempted to operate on a closed WAD")
-        return lump in self.lumps
+        return item in self.lumps
 
-    def append(self, lump: Lump) -> None:
+    def append(self, object: Lump) -> None:
         """Append a lump to the end of the WAD"""
+        if not isinstance(object, Lump):
+            raise TypeError(f"Expected Lump, got {type(object)}")
         if self.__closed:
             raise ClosedWAD("Attempted to operate on a closed WAD")
-        self.lumps.append(lump)
+        self.lumps.append(object)
     
     def clear(self) -> None:
         """Clear the WAD of all lumps"""
@@ -369,20 +390,28 @@ Raises:
         instance.lumps = deepcopy(self.lumps)
         return instance
 
-    def extend(self, other: "WAD") -> None:
+    def extend(self, iterable: "WAD") -> None:
         """Extend self with the lumps of another WAD"""
+        if not isinstance(iterable, WAD):
+            raise TypeError(f"Expected WAD, got {type(iterable)}")
         if self.__closed:
             raise ClosedWAD("Attempted to operate on a closed WAD")
-        self.lumps.extend(other.lumps)
+        self.lumps.extend(iterable.lumps)
 
-    def insert(self, index: int, lump: Lump) -> None:
+    def insert(self, index: SupportsIndex, object: Lump) -> None:
         """Insert lump before index"""
+        if not isinstance(index, SupportsIndex):
+            raise TypeError(f"Expected index to be interpretable as an integer, got {type(index)}")
+        if not isinstance(object, Lump):
+            raise TypeError(f"Expected object to be Lump, got {type(object)}")
         if self.__closed:
             raise ClosedWAD("Attempted to operate on a closed WAD")
-        self.lumps.insert(index, lump)
+        self.lumps.insert(index, object)
 
-    def pop(self, index: int = -1) -> Lump:
+    def pop(self, index: SupportsIndex = -1) -> Lump:
         """Remove and return lump at index (default last), raising IndexError if index is out of range or the WAD is empty"""
+        if not isinstance(index, SupportsIndex):
+            raise TypeError(f"Expected index to be interpretable as an integer, got {type(index)}")
         if self.__closed:
             raise ClosedWAD("Attempted to operate on a closed WAD")
         return self.lumps.pop(index)

@@ -40,11 +40,24 @@ Might still be of a type that isn't autodetected, such as an unrecognized marker
     MAP = auto()
 
 
-@dataclass
+@dataclass(kw_only=True)
 class Lump:
     """Lump data."""
 
     name: bytes | bytearray
     """8 bytes max pretty please"""
-    lump_type: LumpType
+    lump_type: LumpType = LumpType.NONE
+    """This isn't needed when serializing and is really only helpful when reading a WAD. You can just keep this as the default if you're creating lumps."""
     contents: bytes | bytearray
+
+    def __lt__(self, other: "Lump") -> bool:
+        return self.name < other.name
+
+    def __le__(self, other: "Lump") -> bool:
+        return self.name <= other.name
+
+    def __gt__(self, other: "Lump") -> bool:
+        return self.name > other.name
+
+    def __ge__(self, other: "Lump") -> bool:
+        return self.name >= other.name
