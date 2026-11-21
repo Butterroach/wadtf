@@ -4,12 +4,12 @@ import struct
 from collections.abc import Iterator
 from copy import deepcopy
 from types import TracebackType
-from typing import Self, cast, Literal, overload, SupportsIndex
+from typing import Self, cast, Literal, overload, SupportsIndex, Iterable
 from ._errors import *
 from ._little_classes import *
 from ._helpers import *
 
-__all__ = ["ClosedWAD", "WADTooLarge", "InvalidLumpError", "UnserializableType", "ReadTooHigh", "InvalidEntryError", "InvalidHeaderError", "SeekableReadableBinaryIO", "WriteableBinaryIO", "WADType", "LumpType", "Lump", "WAD", "open_wad"]
+__all__ = ["ClosedWAD", "TooLargeToSerialize", "InvalidLumpError", "UnserializableType", "ReadTooHigh", "InvalidEntryError", "InvalidHeaderError", "SeekableReadableBinaryIO", "WriteableBinaryIO", "WADType", "LumpType", "Lump", "WAD", "open_wad", "FileTooLarge"]
 
 
 class WAD:
@@ -28,16 +28,18 @@ Raises:
     InvalidHeaderError: If there is something wrong with the header.
     InvalidEntryError: If there is something wrong with an entry in the directory.
     ReadTooHigh: If there was an attempt to read over 2 GiB of data.
+    FileTooLarge: If the stream passed is over 2GiB.
     EOFError: If EOF is unexpectedly reached."""
 
     lumps: list[Lump]
     """Internal directory. You can directly modify this too instead of using the instance methods!"""
     wad_type: WADType
     """Whether it's an IWAD or PWAD or unknown. Not actually checked by the engine lol lmao."""
-    __closed: bool = False
+    __closed: bool
 
     def __init__(self, stream: SeekableReadableBinaryIO | None = None, *, dont_check_magic: bool = False, big_endian: bool = False, read_large_files: bool = False) -> None:
-        int_temp: str = ">i" if big_endian else "<i"
+        self.closed = False
+        int_format: str = ">i" if big_endian else "<i"
         self.lumps = []
         if stream is None:
             # lol
@@ -57,9 +59,9 @@ Raises:
                 else:
                     raise InvalidHeaderError(f"Not a WAD. Expected first 4 bytes to be 'IWAD' or 'PWAD', but got {repr(unknown_id)}.")
         
-        numlumps: int = cast(int, struct.unpack(int_temp, safe_read(stream, read_large_files, 4))[0])
+        numlumps: int = cast(int, struct.unpack(int_format, safe_read(stream, read_large_files, 4))[0])
         
-        infotableofs: int = cast(int, struct.unpack(int_temp, safe_read(stream, read_large_files, 4))[0])
+        infotableofs: int = cast(int, struct.unpack(int_format, safe_read(stream, read_large_files, 4))[0])
 
         stream.seek(0, os.SEEK_END)
         
@@ -68,9 +70,12 @@ Raises:
         if numlumps == 0:
             return  # yeah we're done here
         
+        if stream_length > 2**31 and not read_large_files:
+            raise FileTooLarge(f"WAD is {stream_length} bytes (over 2GiB!). Set read_large_files to True if you want this to continue regardless.")
+        
         if infotableofs < 12:
             raise InvalidHeaderError(
-                f"infotableofs is invalid ({infotableofs} is less than 16 and if naively read could start reading headers). Malicious WAD? Corrupted headers? Wrong endianness? Is it even a WAD?"
+                f"infotableofs is invalid ({infotableofs} is less than 12 and if naively read could start reading headers). Malicious WAD? Corrupted headers? Wrong endianness? Is it even a WAD?"
             )
 
         if numlumps < 0:
@@ -87,8 +92,8 @@ Raises:
         
         for i in range(numlumps):
             safe_seek(stream, stream_length, infotableofs + i * 16)
-            filepos: int = cast(int, struct.unpack(int_temp, safe_read(stream, read_large_files, 4))[0])
-            size: int = cast(int, struct.unpack(int_temp, safe_read(stream, read_large_files, 4))[0])
+            filepos: int = cast(int, struct.unpack(int_format, safe_read(stream, read_large_files, 4))[0])
+            size: int = cast(int, struct.unpack(int_format, safe_read(stream, read_large_files, 4))[0])
             name: bytes = safe_read(stream, read_large_files, 8)
             contents: bytes = b""
             if size != 0:
@@ -115,7 +120,7 @@ Raises:
             if size == 0:
                 try:
                     s_name = name.rstrip(b"\x00").decode(errors="strict").upper()
-                    if s_name in ("F_START", "FF_START", "S_START", "SS_START", "F_END", "FF_END", "S_END", "SS_END") or re.fullmatch(r"E[0-9]M[0-9]|MAP[0-9]{2}", s_name):
+                    if s_name in ("F_START", "FF_START", "S_START", "SS_START", "F_END", "FF_END", "S_END", "SS_END", "ENDMAP") or re.fullmatch(r"E[0-9]M[0-9]|MAP[0-9]{2}", s_name):
                         last_marker = name
                         lump_type = LumpType.MARKER
                 except UnicodeDecodeError:
@@ -242,11 +247,11 @@ Raises:
 
         data += safe_si32_pack(big_endian,  len(self.lumps))
 
-        all_the_cute_lump_data: bytes = b"".join([lump.contents for lump in self.lumps])
+        all_lump_data: bytes = b"".join([lump.contents for lump in self.lumps])
 
-        data += safe_si32_pack(big_endian,  len(all_the_cute_lump_data) + 12)
+        data += safe_si32_pack(big_endian,  len(all_lump_data) + 12)
 
-        data += all_the_cute_lump_data
+        data += all_lump_data
         
         current_pos = 12
 
@@ -257,14 +262,12 @@ Raises:
                 raise TypeError(f"Name of lump index {i} is not bytes nor bytearray, but rather '{type(lump.name)}'")
             if len(lump.name) > 8:
                 raise InvalidLumpError(f"Name of lump index {i} is longer than 8 bytes")
-            if len(lump.name) < 0:
-                raise InvalidLumpError(f"Name of lump index {i} is zero")
             data += struct.pack("8s", lump.name)
             current_pos += len(lump.contents)
 
         return bytes(data)
 
-    def save_to(self, file: WriteableBinaryIO | str | bytes | os.PathLike[str] | os.PathLike[bytes], *, big_endian: bool = False, magic: bytes | None = None) -> None:
+    def save_to(self, file: WritableBinaryIO | str | bytes | os.PathLike[str] | os.PathLike[bytes], *, big_endian: bool = False, magic: bytes | None = None) -> None:
         """Serializes and writes in one go.
 
 Args:
@@ -289,16 +292,16 @@ Raises:
     def close(self) -> None:
         """Closes the WAD. Frees up memory. Be VERY careful not to operate on a closed WAD!"""
         if self.__closed:
-            raise ClosedWAD("Attempted to operate on a closed WAD")
+            return
         self.__closed = True
         del self.lumps
         del self.wad_type
 
     def __eq__(self, other: object) -> bool:
-        if self.__closed:
-            raise ClosedWAD("Attempted to operate on a closed WAD")
         if not isinstance(other, WAD):
             return NotImplemented
+        if self.__closed or other.__closed:
+            raise ClosedWAD("Attempted to operate on a closed WAD")
         return self.lumps == other.lumps and self.wad_type == other.wad_type
 
     def __len__(self) -> int:
@@ -318,33 +321,37 @@ Raises:
 
     def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None) -> Literal[False]:
         # cleanup!!! yay!!!
-        if self.__closed:
-            raise ClosedWAD("Attempted to operate on a closed WAD")
         self.close()
         return False
     
     @overload
     def __getitem__(self, index: SupportsIndex) -> Lump: ...
     @overload
-    def __getitem__(self, index: slice) -> list[Lump]: ...
-    def __getitem__(self, key: SupportsIndex | slice) -> Lump | list[Lump]:
-        if not isinstance(key, SupportsIndex | slice):
+    def __getitem__(self, index: slice[SupportsIndex | None, SupportsIndex | None, SupportsIndex | None]) -> list[Lump]: ...
+    def __getitem__(self, key: SupportsIndex | slice[SupportsIndex | None, SupportsIndex | None, SupportsIndex | None]) -> Lump | list[Lump]:
+        if not isinstance(key, (SupportsIndex, slice[SupportsIndex | None, SupportsIndex | None, SupportsIndex | None])):
             raise TypeError(f"key of type '{type(key)}' must be a slice, or interpretable as an integer")
         if self.__closed:
             raise ClosedWAD("Attempted to operate on a closed WAD")
         return self.lumps[key]
 
-    def __setitem__(self, key: SupportsIndex, value: Lump) -> None:
-        if not isinstance(key, SupportsIndex | slice):
+    @overload
+    def __setitem__(self, key: SupportsIndex, value: Lump) -> None: ...
+    @overload
+    def __setitem__(self, key: slice[SupportsIndex | None, SupportsIndex | None, SupportsIndex | None], value: Iterable[Lump]) -> None: ...
+    def __setitem__(self, key: SupportsIndex | slice[SupportsIndex | None, SupportsIndex | None, SupportsIndex | None], value: Lump | Iterable[Lump]) -> None:
+        if not isinstance(key, (SupportsIndex, slice[SupportsIndex | None, SupportsIndex | None, SupportsIndex | None])):
             raise TypeError(f"key of type '{type(key)}' must be a slice, or interpretable as an integer")
-        if not isinstance(value, Lump):
-            raise TypeError(f"expected value of type Lump, got ''{type(value)}'")
+        if isinstance(key, SupportsIndex) and not isinstance(value, Lump):
+            raise TypeError(f"expected value of type Lump, got '{type(value)}'")
+        if isinstance(key, slice[SupportsIndex | None, SupportsIndex | None, SupportsIndex | None]) and not isinstance(value, Iterable[Lump]):
+            raise TypeError(f"expected value of type Iterable[Lump] (due to slice key), got '{type(value)}'")
         if self.__closed:
             raise ClosedWAD("Attempted to operate on a closed WAD")
-        self.lumps[key] = value
+        self.lumps[key] = value  # ty: ignore[invalid-assignment]
 
-    def __delitem__(self, key: SupportsIndex | slice) -> None:
-        if not isinstance(key, SupportsIndex | slice):
+    def __delitem__(self, key: SupportsIndex | slice[SupportsIndex | None, SupportsIndex | None, SupportsIndex | None]) -> None:
+        if not isinstance(key, (SupportsIndex, slice[SupportsIndex | None, SupportsIndex | None, SupportsIndex | None])):
             raise TypeError(f"key of type '{type(key)}' must be a slice, or interpretable as an integer")
         if self.__closed:
             raise ClosedWAD("Attempted to operate on a closed WAD")
@@ -353,11 +360,15 @@ Raises:
     def __add__(self, other: "WAD") -> "WAD":
         if not isinstance(other, WAD):
             return NotImplemented
-        if self.__closed:
+        if self.__closed or other.__closed:
             raise ClosedWAD("Attempted to operate on a closed WAD")
         instance: WAD = WAD()
-        instance.wad_type = self.wad_type
-        instance.lumps = self.lumps + other.lumps
+        if self.wad_type == WADType.UNKNOWN:
+            if other.wad_type != WADType.UNKNOWN:
+                instance.wad_type = other.wad_type
+        else:
+            instance.wad_type = self.wad_type
+        instance.lumps = deepcopy(self.lumps + other.lumps)
         return instance
 
     def __contains__(self, item: Lump) -> bool:
@@ -394,7 +405,7 @@ Raises:
         """Extend self with the lumps of another WAD"""
         if not isinstance(iterable, WAD):
             raise TypeError(f"Expected WAD, got {type(iterable)}")
-        if self.__closed:
+        if self.__closed or iterable.__closed:
             raise ClosedWAD("Attempted to operate on a closed WAD")
         self.lumps.extend(iterable.lumps)
 
@@ -416,7 +427,17 @@ Raises:
             raise ClosedWAD("Attempted to operate on a closed WAD")
         return self.lumps.pop(index)
 
-def open_wad(path: int | str | bytes | os.PathLike[str] | os.PathLike[bytes], *, dont_check_magic: bool = False, big_endian: bool = False, read_large_files: bool = False) -> WAD:
+    def is_closed(self) -> bool:
+        """Check whether this WAD is closed. Returns True if closed."""
+        return self.__closed
+
+def open_wad(
+    path: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+    *,
+    dont_check_magic: bool = False,
+    big_endian: bool = False,
+    read_large_files: bool = False,
+) -> WAD:
     """Helper to open a file and deserialize it. See WAD for the keyword args."""
     with open(path, "rb") as f:
         return WAD(f, dont_check_magic=dont_check_magic, big_endian=big_endian, read_large_files=read_large_files)

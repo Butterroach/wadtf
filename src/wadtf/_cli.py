@@ -5,13 +5,13 @@ import re  # tragedy
 import sys
 import wadtf
 from pathlib import Path
-from typing import cast, TextIO
+from typing import cast
 
-UNITS: list[str] = ["B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB", "RiB", "QiB"]
+UNITS: tuple[str, ...] = ("B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB", "ZiB", "YiB", "RiB", "QiB")
 
 
-def human_unit(bytes: int) -> str:
-    val: float = bytes
+def human_unit(bytes_n: int) -> str:
+    val: float = bytes_n
     unit_index: int = 0
     while abs(val) >= 1024 and unit_index < len(UNITS) - 1:
         val /= 1024
@@ -92,15 +92,14 @@ def handle_extract(args: argparse.Namespace) -> None:
     path: Path = cast(Path, args.wad)
     directory_path: Path = cast(Path, args.dir)
     pattern: re.Pattern[bytes] = re.compile(cast(str, args.pattern).encode(), re.DOTALL)
-    directory_path.mkdir(exist_ok=True)
+    directory_path.mkdir(exist_ok=True, parents=False)
     with wadtf.open_wad(path, dont_check_magic=args.dont_check_magic, big_endian=args.big_endian, read_large_files=args.read_large_files) as w:
-        if len(w) == 0:
-            return  # lol
-        for i, lump in enumerate(w):
-            print(f"{"█" * int(i / len(w) * 50):<50} | {i / len(w) * 100:.2f}%", end="\r", flush=True)
-            if pattern.fullmatch(lump.name) is not None:
-                with open(directory_path / (base64.urlsafe_b64encode(lump.name).decode() + "." + str(i) + ".lump"), "wb") as f:
-                    f.write(lump.contents)
+        if len(w) != 0:
+            for i, lump in enumerate(w):
+                print(f"{"█" * int(i / len(w) * 50):<50} | {i / len(w) * 100:.2f}%", end="\r", flush=True)
+                if pattern.fullmatch(lump.name) is not None:
+                    with open(directory_path / (base64.urlsafe_b64encode(lump.name).decode() + "." + str(i) + ".lump"), "wb") as f:
+                        f.write(lump.contents)
     print(f"{"█" * 50} | 100.00%", flush=True)
 
 
@@ -122,7 +121,7 @@ def handle_search(args: argparse.Namespace) -> None:
     pattern: re.Pattern[bytes] = re.compile(cast(str, args.pattern).encode(), re.DOTALL)
     with wadtf.open_wad(path, dont_check_magic=args.dont_check_magic, big_endian=args.big_endian, read_large_files=args.read_large_files) as w:
         for i, lump in enumerate(w):
-            if pattern.fullmatch(lump.name) is not None:
+            if pattern.match(lump.name) is not None:
                 print(i)
 
 

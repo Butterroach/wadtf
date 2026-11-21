@@ -12,7 +12,7 @@ class SeekableReadableBinaryIO(Protocol):
 
 
 @runtime_checkable
-class WriteableBinaryIO(Protocol):
+class WritableBinaryIO(Protocol):
     def write(self, data: Buffer, /) -> int: ...
 
 
@@ -51,13 +51,21 @@ class Lump:
     contents: bytes | bytearray
 
     def __lt__(self, other: "Lump") -> bool:
+        if not isinstance(other, Lump):
+            return NotImplemented
         return self.name < other.name
 
     def __le__(self, other: "Lump") -> bool:
+        if not isinstance(other, Lump):
+            return NotImplemented
         return self.name <= other.name
 
     def __gt__(self, other: "Lump") -> bool:
+        if not isinstance(other, Lump):
+            return NotImplemented
         return self.name > other.name
 
     def __ge__(self, other: "Lump") -> bool:
+        if not isinstance(other, Lump):
+            return NotImplemented
         return self.name >= other.name
