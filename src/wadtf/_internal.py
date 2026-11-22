@@ -370,7 +370,7 @@ Raises:
             return NotImplemented
         if self.__closed or other.__closed:
             raise ClosedWAD("Attempted to operate on a closed WAD")
-        instance: WAD = type(self)()
+        instance: Self = type(self)()
         if self.wad_type == WADType.UNKNOWN:
             if other.wad_type != WADType.UNKNOWN:
                 instance.wad_type = other.wad_type
@@ -415,7 +415,7 @@ Raises:
         """Return a new copy of the WAD"""
         if self.__closed:
             raise ClosedWAD("Attempted to operate on a closed WAD")
-        instance: WAD = type(self)()
+        instance: Self = type(self)()
         instance.wad_type = self.wad_type
         instance.lumps = deepcopy(self.lumps)
         return instance
