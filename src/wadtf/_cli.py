@@ -48,8 +48,8 @@ def handle_info(args: argparse.Namespace) -> None:
         if len(w) > 0:
             print("first lump name:", w[0].name.decode(errors="ignore"))
             print("last lump name: ", w[-1].name.decode(errors="ignore"))
-            small_lump: wadtf.Lump = min(w.lumps, key=lambda x: len(x.contents))
-            large_lump: wadtf.Lump = max(w.lumps, key=lambda x: len(x.contents))
+            small_lump: wadtf.Lump = min(w, key=lambda x: len(x.contents))
+            large_lump: wadtf.Lump = max(w, key=lambda x: len(x.contents))
             small_lump_len: int = len(small_lump.contents)
             large_lump_len: int = len(large_lump.contents)
             print(

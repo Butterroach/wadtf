@@ -46,7 +46,7 @@ Raises:
     __closed: bool
 
     def __init__(self, stream: SeekableReadableBinaryIO | None = None, *, dont_check_magic: bool = False, big_endian: bool = False, read_large_files: bool = False) -> None:
-        self.closed = False
+        self.__closed = False
         int_format: str = ">i" if big_endian else "<i"
         self.lumps = []
         if stream is None:
