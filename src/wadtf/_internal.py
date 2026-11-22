@@ -411,11 +411,11 @@ Raises:
             raise ClosedWAD("Attempted to operate on a closed WAD")
         self.lumps.clear()
 
-    def copy(self) -> "WAD":
+    def copy(self) -> Self:
         """Return a new copy of the WAD"""
         if self.__closed:
             raise ClosedWAD("Attempted to operate on a closed WAD")
-        instance: WAD = WAD()
+        instance: WAD = type(self)()
         instance.wad_type = self.wad_type
         instance.lumps = deepcopy(self.lumps)
         return instance
