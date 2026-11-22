@@ -365,12 +365,12 @@ Raises:
             raise ClosedWAD("Attempted to operate on a closed WAD")
         del self.lumps[key]
 
-    def __add__(self, other: "WAD") -> "WAD":
+    def __add__(self, other: "WAD") -> Self:
         if not isinstance(other, WAD):
             return NotImplemented
         if self.__closed or other.__closed:
             raise ClosedWAD("Attempted to operate on a closed WAD")
-        instance: WAD = WAD()
+        instance: WAD = type(self)()
         if self.wad_type == WADType.UNKNOWN:
             if other.wad_type != WADType.UNKNOWN:
                 instance.wad_type = other.wad_type
@@ -378,6 +378,17 @@ Raises:
             instance.wad_type = self.wad_type
         instance.lumps = deepcopy(self.lumps + other.lumps)
         return instance
+
+    def __iadd__(self, other: "WAD") -> Self:
+        if not isinstance(other, WAD):
+            return NotImplemented
+        if self.__closed or other.__closed:
+            raise ClosedWAD("Attempted to operate on a closed WAD")
+        if self.wad_type == WADType.UNKNOWN:
+            if other.wad_type != WADType.UNKNOWN:
+                self.wad_type = other.wad_type
+        self.lumps += deepcopy(other.lumps)
+        return self
 
     def __contains__(self, item: Lump) -> bool:
         if not isinstance(item, Lump):
