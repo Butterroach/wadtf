@@ -1,3 +1,6 @@
+# Copyright(c) Butterroach 2026
+# SPDX-License-Identifier: Apache-2.0
+
 import struct
 from ._little_classes import *
 from ._errors import *

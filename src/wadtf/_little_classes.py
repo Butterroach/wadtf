@@ -1,3 +1,6 @@
+# Copyright(c) Butterroach 2026
+# SPDX-License-Identifier: Apache-2.0
+
 from collections.abc import Buffer
 from dataclasses import dataclass
 from enum import Enum, auto
