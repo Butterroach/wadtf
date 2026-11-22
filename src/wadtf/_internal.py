@@ -7,12 +7,17 @@ import struct
 from collections.abc import Iterator
 from copy import deepcopy
 from types import TracebackType
-from typing import Self, cast, Literal, overload, SupportsIndex, Iterable
+from typing import Self, cast, Literal, overload, SupportsIndex, Iterable, TYPE_CHECKING
 from ._errors import *
 from ._little_classes import *
 from ._helpers import *
 
-__all__ = ["ClosedWAD", "TooLargeToSerialize", "InvalidLumpError", "UnserializableType", "ReadTooHigh", "InvalidEntryError", "InvalidHeaderError", "SeekableReadableBinaryIO", "WriteableBinaryIO", "WADType", "LumpType", "Lump", "WAD", "open_wad", "FileTooLarge"]
+if TYPE_CHECKING:
+    slice_index = slice[SupportsIndex | None, SupportsIndex | None, SupportsIndex | None]
+else:
+    slice_index = slice
+
+__all__ = ["ClosedWAD", "TooLargeToSerialize", "InvalidLumpError", "UnserializableType", "ReadTooHigh", "InvalidEntryError", "InvalidHeaderError", "SeekableReadableBinaryIO", "WritableBinaryIO", "WADType", "LumpType", "Lump", "WAD", "open_wad", "FileTooLarge"]
 
 
 class WAD:
@@ -330,9 +335,9 @@ Raises:
     @overload
     def __getitem__(self, index: SupportsIndex) -> Lump: ...
     @overload
-    def __getitem__(self, index: slice[SupportsIndex | None, SupportsIndex | None, SupportsIndex | None]) -> list[Lump]: ...
-    def __getitem__(self, key: SupportsIndex | slice[SupportsIndex | None, SupportsIndex | None, SupportsIndex | None]) -> Lump | list[Lump]:
-        if not isinstance(key, (SupportsIndex, slice[SupportsIndex | None, SupportsIndex | None, SupportsIndex | None])):
+    def __getitem__(self, index: slice_index) -> list[Lump]: ...
+    def __getitem__(self, key: SupportsIndex | slice_index) -> Lump | list[Lump]:
+        if not isinstance(key, (SupportsIndex, slice_index)):
             raise TypeError(f"key of type '{type(key)}' must be a slice, or interpretable as an integer")
         if self.__closed:
             raise ClosedWAD("Attempted to operate on a closed WAD")
@@ -341,20 +346,20 @@ Raises:
     @overload
     def __setitem__(self, key: SupportsIndex, value: Lump) -> None: ...
     @overload
-    def __setitem__(self, key: slice[SupportsIndex | None, SupportsIndex | None, SupportsIndex | None], value: Iterable[Lump]) -> None: ...
-    def __setitem__(self, key: SupportsIndex | slice[SupportsIndex | None, SupportsIndex | None, SupportsIndex | None], value: Lump | Iterable[Lump]) -> None:
-        if not isinstance(key, (SupportsIndex, slice[SupportsIndex | None, SupportsIndex | None, SupportsIndex | None])):
+    def __setitem__(self, key: slice_index, value: Iterable[Lump]) -> None: ...
+    def __setitem__(self, key: SupportsIndex | slice_index, value: Lump | Iterable[Lump]) -> None:
+        if not isinstance(key, (SupportsIndex, slice_index)):
             raise TypeError(f"key of type '{type(key)}' must be a slice, or interpretable as an integer")
         if isinstance(key, SupportsIndex) and not isinstance(value, Lump):
             raise TypeError(f"expected value of type Lump, got '{type(value)}'")
-        if isinstance(key, slice[SupportsIndex | None, SupportsIndex | None, SupportsIndex | None]) and not isinstance(value, Iterable[Lump]):
+        if isinstance(key, slice_index) and not isinstance(value, Iterable[Lump]):
             raise TypeError(f"expected value of type Iterable[Lump] (due to slice key), got '{type(value)}'")
         if self.__closed:
             raise ClosedWAD("Attempted to operate on a closed WAD")
         self.lumps[key] = value  # ty: ignore[invalid-assignment]
 
-    def __delitem__(self, key: SupportsIndex | slice[SupportsIndex | None, SupportsIndex | None, SupportsIndex | None]) -> None:
-        if not isinstance(key, (SupportsIndex, slice[SupportsIndex | None, SupportsIndex | None, SupportsIndex | None])):
+    def __delitem__(self, key: SupportsIndex | slice_index) -> None:
+        if not isinstance(key, (SupportsIndex, slice_index)):
             raise TypeError(f"key of type '{type(key)}' must be a slice, or interpretable as an integer")
         if self.__closed:
             raise ClosedWAD("Attempted to operate on a closed WAD")
