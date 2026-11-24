@@ -50,8 +50,8 @@ Basic example:
 import wadtf
 
 with wadtf.open_wad("doom.wad") as w:  # w is wadtf.WAD
-                                       # wadtf.open_wad() can also take pathlike and bytes
-                                       # for its path
+    # wadtf.open_wad() can also take pathlike and bytes
+    # for its path
     match w.wad_type:
         case wadtf.WADType.IWAD:
             print("type: IWAD")
@@ -59,8 +59,8 @@ with wadtf.open_wad("doom.wad") as w:  # w is wadtf.WAD
             print("type: PWAD")
         case wadtf.WADType.UNKNOWN:
             print("type: (unknown)")  # this case will never be reached
-                                      # unless you pass dont_check_magic=True
-                                      # to wadtf.open_wad()
+            # unless you pass dont_check_magic=True
+            # to wadtf.open_wad()
     print(f"lumps: {len(w)}")
     for i, lump in enumerate(w):
         print(f"--lump #{i}--")
@@ -84,8 +84,10 @@ with wadtf.open_wad("doom.wad") as w:  # w is wadtf.WAD
                 # therefore undetectable without parsing which goes against
                 # wadtf's design philosophy
                 print("lump type: map")
-    w.append(wadtf.Lump(name=b"WADTF", contents=b"wadtf demo!"))  # make sure your lumps' names
-                                                                  # aren't larger than 8 bytes!
+    w.append(
+        wadtf.Lump(name=b"WADTF", contents=b"wadtf demo!")
+    )  # make sure your lumps' names
+    # aren't larger than 8 bytes!
     w.save_to("wadtf_demo.wad")
 ```
 

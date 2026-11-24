@@ -4,41 +4,61 @@
 import os
 import re  # tragedy
 import struct
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from copy import deepcopy
 from types import TracebackType
-from typing import Self, cast, Literal, overload, SupportsIndex, Iterable, TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal, Self, SupportsIndex, cast, overload
+
 from ._errors import *
-from ._little_classes import *
 from ._helpers import *
+from ._little_classes import *
 
 if TYPE_CHECKING:
-    slice_index = slice[SupportsIndex | None, SupportsIndex | None, SupportsIndex | None]
+    slice_index = slice[
+        SupportsIndex | None, SupportsIndex | None, SupportsIndex | None
+    ]
 else:
     slice_index = slice
 
-__all__ = ["ClosedWAD", "TooLargeToSerialize", "InvalidLumpError", "UnserializableType", "ReadTooHigh", "InvalidEntryError", "InvalidHeaderError", "SeekableReadableBinaryIO", "WritableBinaryIO", "WADType", "LumpType", "Lump", "WAD", "open_wad", "FileTooLarge", "UnseekableStreamError"]
+__all__ = [
+    "WAD",
+    "ClosedWAD",
+    "FileTooLarge",
+    "InvalidEntryError",
+    "InvalidHeaderError",
+    "InvalidLumpError",
+    "Lump",
+    "LumpType",
+    "ReadTooHigh",
+    "SeekableReadableBinaryIO",
+    "TooLargeToSerialize",
+    "UnseekableStreamError",
+    "UnserializableType",
+    "WADType",
+    "WritableBinaryIO",
+    "open_wad",
+]
 
 
 class WAD:
     """Mutable WAD object. Holds lumps and a WAD type, and can be serialized into a WAD file.
 
-Args:
-    stream: A seekable readable binary IO object, optional. Wrap a bytes object around io.BytesIO() if you for some reason want to deserialize from bytes
-    dont_check_magic: A bool that specifies whether or not to check the first 4 bytes, defaults to False
-    big_endian: A bool that specifies whether to use big endian, defaults to False. Keep it False unless you know why you want this
-    read_large_files: A bool that specifies whether to disable the 2GiB safety check, defaults to False. Keep it False unless you have special reasons
+    Args:
+        stream: A seekable readable binary IO object, optional. Wrap a bytes object around io.BytesIO() if you for some reason want to deserialize from bytes
+        dont_check_magic: A bool that specifies whether or not to check the first 4 bytes, defaults to False
+        big_endian: A bool that specifies whether to use big endian, defaults to False. Keep it False unless you know why you want this
+        read_large_files: A bool that specifies whether to disable the 2GiB safety check, defaults to False. Keep it False unless you have special reasons
 
-Returns:
-    None.
+    Returns:
+        None.
 
-Raises:
-    InvalidHeaderError: If there is something wrong with the header.
-    InvalidEntryError: If there is something wrong with an entry in the directory.
-    ReadTooHigh: If there was an attempt to read over 2 GiB of data.
-    FileTooLarge: If the stream passed is over 2GiB.
-    EOFError: If EOF is unexpectedly reached.
-    UnseekableStreamError: If stream is unseekable."""
+    Raises:
+        InvalidHeaderError: If there is something wrong with the header.
+        InvalidEntryError: If there is something wrong with an entry in the directory.
+        ReadTooHigh: If there was an attempt to read over 2 GiB of data.
+        FileTooLarge: If the stream passed is over 2GiB.
+        EOFError: If EOF is unexpectedly reached.
+        UnseekableStreamError: If stream is unseekable."""
 
     lumps: list[Lump]
     """Internal directory. You can directly modify this too instead of using the instance methods!"""
@@ -46,7 +66,14 @@ Raises:
     """Whether it's an IWAD or PWAD or unknown. Not actually checked by the engine lol lmao."""
     __closed: bool
 
-    def __init__(self, stream: SeekableReadableBinaryIO | None = None, *, dont_check_magic: bool = False, big_endian: bool = False, read_large_files: bool = False) -> None:
+    def __init__(
+        self,
+        stream: SeekableReadableBinaryIO | None = None,
+        *,
+        dont_check_magic: bool = False,
+        big_endian: bool = False,
+        read_large_files: bool = False,
+    ) -> None:
         self.__closed = False
         int_format: str = ">i" if big_endian else "<i"
         self.lumps = []
@@ -54,7 +81,7 @@ Raises:
             # lol
             self.wad_type = WADType.PWAD
             return
-        
+
         if not stream.seekable():
             raise UnseekableStreamError("stream is not seekable")
 
@@ -69,22 +96,30 @@ Raises:
                 if dont_check_magic:
                     self.wad_type = WADType.UNKNOWN
                 else:
-                    raise InvalidHeaderError(f"Not a WAD. Expected first 4 bytes to be 'IWAD' or 'PWAD', but got {repr(unknown_id)}.")
-        
-        numlumps: int = cast(int, struct.unpack(int_format, safe_read(stream, read_large_files, 4))[0])
-        
-        infotableofs: int = cast(int, struct.unpack(int_format, safe_read(stream, read_large_files, 4))[0])
+                    raise InvalidHeaderError(
+                        f"Not a WAD. Expected first 4 bytes to be 'IWAD' or 'PWAD', but got {unknown_id!r}."
+                    )
+
+        numlumps: int = cast(
+            int, struct.unpack(int_format, safe_read(stream, read_large_files, 4))[0]
+        )
+
+        infotableofs: int = cast(
+            int, struct.unpack(int_format, safe_read(stream, read_large_files, 4))[0]
+        )
 
         stream.seek(0, os.SEEK_END)
-        
+
         stream_length: int = stream.tell()
-        
+
         if numlumps == 0:
             return  # yeah we're done here
-        
+
         if stream_length > 2**31 and not read_large_files:
-            raise FileTooLarge(f"WAD is {stream_length} bytes (over 2GiB!). Set read_large_files to True if you want this to continue regardless.")
-        
+            raise FileTooLarge(
+                f"WAD is {stream_length} bytes (over 2GiB!). Set read_large_files to True if you want this to continue regardless."
+            )
+
         if infotableofs < 12:
             raise InvalidHeaderError(
                 f"infotableofs is invalid ({infotableofs} is less than 12 and if naively read could start reading headers). Malicious WAD? Corrupted headers? Wrong endianness? Is it even a WAD?"
@@ -99,13 +134,19 @@ Raises:
             raise InvalidHeaderError(
                 f"numlumps is invalid (numlumps is {numlumps} which if naively read would exceed EOF). Malicious WAD? Corrupted headers? Wrong endianness? Is it even a WAD?"
             )
-        
+
         last_marker: bytes = b""
-        
+
         for i in range(numlumps):
             safe_seek(stream, stream_length, infotableofs + i * 16)
-            filepos: int = cast(int, struct.unpack(int_format, safe_read(stream, read_large_files, 4))[0])
-            size: int = cast(int, struct.unpack(int_format, safe_read(stream, read_large_files, 4))[0])
+            filepos: int = cast(
+                int,
+                struct.unpack(int_format, safe_read(stream, read_large_files, 4))[0],
+            )
+            size: int = cast(
+                int,
+                struct.unpack(int_format, safe_read(stream, read_large_files, 4))[0],
+            )
             name: bytes = safe_read(stream, read_large_files, 8)
             contents: bytes = b""
             if size != 0:
@@ -121,7 +162,10 @@ Raises:
                     raise InvalidEntryError(
                         f"Entry #{i} has an invalid filepos ({filepos}) or size ({size}) which if naively read would read past EOF. Malicious WAD? Corrupted directory? Wrong endianness? Is it even a WAD?"
                     )
-                if filepos < infotableofs + (numlumps * 16) and filepos + size > infotableofs:
+                if (
+                    filepos < infotableofs + (numlumps * 16)
+                    and filepos + size > infotableofs
+                ):
                     raise InvalidEntryError(
                         f"Entry #{i} has a filepos ({filepos}) and size ({size}) which if naively read would read into the directory. Malicious WAD? Corrupted directory? Wrong endianness? Is it even a WAD?"
                     )
@@ -132,7 +176,17 @@ Raises:
             if size == 0:
                 try:
                     s_name = name.rstrip(b"\x00").decode(errors="strict").upper()
-                    if s_name in ("F_START", "FF_START", "S_START", "SS_START", "F_END", "FF_END", "S_END", "SS_END", "ENDMAP") or re.fullmatch(r"E[0-9]M[0-9]|MAP[0-9]{2}", s_name):
+                    if s_name in (
+                        "F_START",
+                        "FF_START",
+                        "S_START",
+                        "SS_START",
+                        "F_END",
+                        "FF_END",
+                        "S_END",
+                        "SS_END",
+                        "ENDMAP",
+                    ) or re.fullmatch(r"E[0-9]M[0-9]|MAP[0-9]{2}", s_name):
                         last_marker = name
                         lump_type = LumpType.MARKER
                 except UnicodeDecodeError:
@@ -140,7 +194,9 @@ Raises:
             else:
                 try:
                     s_name = name.rstrip(b"\x00").decode(errors="strict").upper()
-                    s_last_marker: str = last_marker.rstrip(b'\x00').decode(errors="strict").upper()
+                    s_last_marker: str = (
+                        last_marker.rstrip(b"\x00").decode(errors="strict").upper()
+                    )
                     if s_last_marker in ("F_START", "FF_START"):
                         lump_type = LumpType.FLAT
                     elif s_last_marker in ("S_START", "SS_START"):
@@ -156,9 +212,11 @@ Raises:
                         lump_type = LumpType.MAP
                 except UnicodeDecodeError:
                     lump_type = LumpType.NONE
-            lump: Lump = Lump(name=name.rstrip(b"\x00"), lump_type=lump_type, contents=contents)
+            lump: Lump = Lump(
+                name=name.rstrip(b"\x00"), lump_type=lump_type, contents=contents
+            )
             self.lumps.append(lump)
-    
+
     def match_name(self, name: str | bytes) -> list[int]:
         """Performs a **CASE-SENSITIVE!!!** search for lumps based on their names. Returns a list of indices (just wad.lumps[index] to access it)."""
         if self.__closed:
@@ -172,7 +230,7 @@ Raises:
 
     def case_match_name(self, name: str | bytes) -> list[int]:
         """Performs a case-insensitive search for lumps based on their names. Returns a list of indices (just wad.lumps[index] to access it).
-Will NOT match lumps with binary names. Use match_name() if you care about binary lumps."""
+        Will NOT match lumps with binary names. Use match_name() if you care about binary lumps."""
         if self.__closed:
             raise ClosedWAD("Attempted to operate on a closed WAD")
         s_name: str
@@ -220,27 +278,31 @@ Will NOT match lumps with binary names. Use match_name() if you care about binar
                 continue
         return None
 
-    def serialize(self, *, big_endian: bool = False, magic: bytes | bytearray | None = None) -> bytes:
+    def serialize(
+        self, *, big_endian: bool = False, magic: bytes | bytearray | None = None
+    ) -> bytes:
         """Serialize the WAD object and return the data.
 
-Args:
-    big_endian: An optional bool that specifies whether to use big endian, defaults to False. Keep it False unless you know why you want this
-    magic: An optional bytes or bytearray that specifies the 4-byte identification string at the start of the file and ignores the WAD type, defaults to None.
+        Args:
+            big_endian: An optional bool that specifies whether to use big endian, defaults to False. Keep it False unless you know why you want this
+            magic: An optional bytes or bytearray that specifies the 4-byte identification string at the start of the file and ignores the WAD type, defaults to None.
 
-Returns:
-    The serialized binary data as a bytes object.
+        Returns:
+            The serialized binary data as a bytes object.
 
-Raises:
-    UnserializableType: If the WAD type is unserializable and magic was not provided.
-    ValueError: If magic is not 4 bytes.
-    TypeError: If magic is not bytes or bytearray.
-    InvalidLumpError: If there's something wrong with a lump"""
+        Raises:
+            UnserializableType: If the WAD type is unserializable and magic was not provided.
+            ValueError: If magic is not 4 bytes.
+            TypeError: If magic is not bytes or bytearray.
+            InvalidLumpError: If there's something wrong with a lump"""
 
         if self.__closed:
             raise ClosedWAD("Attempted to operate on a closed WAD")
 
         if magic is not None and not isinstance(magic, (bytes, bytearray)):
-            raise TypeError(f"Expected magic to be bytes or bytearray but got '{type(magic)}'")
+            raise TypeError(
+                f"Expected magic to be bytes or bytearray but got '{type(magic)}'"
+            )
 
         if magic is not None and len(magic) != 4:
             raise ValueError("magic is not 4 bytes.")
@@ -254,25 +316,29 @@ Raises:
                 case WADType.PWAD:
                     data += b"PWAD"
                 case unknown_type:
-                    raise UnserializableType(f"Expected a serializable WAD type but got {unknown_type}.")
+                    raise UnserializableType(
+                        f"Expected a serializable WAD type but got {unknown_type}."
+                    )
         else:
             data += magic
 
-        data += safe_si32_pack(big_endian,  len(self.lumps))
+        data += safe_si32_pack(big_endian, len(self.lumps))
 
         all_lump_data: bytes = b"".join([lump.contents for lump in self.lumps])
 
-        data += safe_si32_pack(big_endian,  len(all_lump_data) + 12)
+        data += safe_si32_pack(big_endian, len(all_lump_data) + 12)
 
         data += all_lump_data
-        
+
         current_pos = 12
 
         for i, lump in enumerate(self.lumps):
-            data += safe_si32_pack(big_endian,  current_pos)
-            data += safe_si32_pack(big_endian,  len(lump.contents))
+            data += safe_si32_pack(big_endian, current_pos)
+            data += safe_si32_pack(big_endian, len(lump.contents))
             if not isinstance(lump.name, (bytes, bytearray)):
-                raise TypeError(f"Name of lump index {i} is not bytes nor bytearray, but rather '{type(lump.name)}'")
+                raise TypeError(
+                    f"Name of lump index {i} is not bytes nor bytearray, but rather '{type(lump.name)}'"
+                )
             if len(lump.name) > 8:
                 raise InvalidLumpError(f"Name of lump index {i} is longer than 8 bytes")
             data += struct.pack("8s", lump.name)
@@ -280,20 +346,26 @@ Raises:
 
         return bytes(data)
 
-    def save_to(self, file: WritableBinaryIO | str | bytes | os.PathLike[str] | os.PathLike[bytes], *, big_endian: bool = False, magic: bytes | None = None) -> None:
+    def save_to(
+        self,
+        file: WritableBinaryIO | str | bytes | os.PathLike[str] | os.PathLike[bytes],
+        *,
+        big_endian: bool = False,
+        magic: bytes | None = None,
+    ) -> None:
         """Serializes and writes in one go.
 
-Args:
-    file_or_path: Either a writeable binary IO object, or a string or bytes (file path), or a path-like object.
-    big_endian: An optional bool that specifies whether to use big endian, defaults to False. Keep it False unless you know why you want this
-    magic: An optional bytes that specifies the 4-byte identification string at the start of the file and ignores the WAD type, defaults to None.
+        Args:
+            file_or_path: Either a writeable binary IO object, or a string or bytes (file path), or a path-like object.
+            big_endian: An optional bool that specifies whether to use big endian, defaults to False. Keep it False unless you know why you want this
+            magic: An optional bytes that specifies the 4-byte identification string at the start of the file and ignores the WAD type, defaults to None.
 
-Returns:
-    None.
+        Returns:
+            None.
 
-Raises:
-    UnserializableType: If the WAD type is unserializable and magic was not provided.
-    ValueError: If magic is not 4 bytes."""
+        Raises:
+            UnserializableType: If the WAD type is unserializable and magic was not provided.
+            ValueError: If magic is not 4 bytes."""
         if self.__closed:
             raise ClosedWAD("Attempted to operate on a closed WAD")
         if isinstance(file, (str, bytes, os.PathLike)):
@@ -332,18 +404,25 @@ Raises:
             raise ClosedWAD("Attempted to operate on a closed WAD")
         return self  # lol
 
-    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None) -> Literal[False]:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> Literal[False]:
         # cleanup!!! yay!!!
         self.close()
         return False
-    
+
     @overload
     def __getitem__(self, index: SupportsIndex) -> Lump: ...
     @overload
     def __getitem__(self, index: slice_index) -> list[Lump]: ...
     def __getitem__(self, key: SupportsIndex | slice_index) -> Lump | list[Lump]:
         if not isinstance(key, (SupportsIndex, slice_index)):
-            raise TypeError(f"key of type '{type(key)}' must be a slice, or interpretable as an integer")
+            raise TypeError(
+                f"key of type '{type(key)}' must be a slice, or interpretable as an integer"
+            )
         if self.__closed:
             raise ClosedWAD("Attempted to operate on a closed WAD")
         return self.lumps[key]
@@ -352,20 +431,28 @@ Raises:
     def __setitem__(self, key: SupportsIndex, value: Lump) -> None: ...
     @overload
     def __setitem__(self, key: slice_index, value: Iterable[Lump]) -> None: ...
-    def __setitem__(self, key: SupportsIndex | slice_index, value: Lump | Iterable[Lump]) -> None:
+    def __setitem__(
+        self, key: SupportsIndex | slice_index, value: Lump | Iterable[Lump]
+    ) -> None:
         if not isinstance(key, (SupportsIndex, slice_index)):
-            raise TypeError(f"key of type '{type(key)}' must be a slice, or interpretable as an integer")
+            raise TypeError(
+                f"key of type '{type(key)}' must be a slice, or interpretable as an integer"
+            )
         if isinstance(key, SupportsIndex) and not isinstance(value, Lump):
             raise TypeError(f"expected value of type Lump, got '{type(value)}'")
         if isinstance(key, slice_index) and not isinstance(value, Iterable[Lump]):
-            raise TypeError(f"expected value of type Iterable[Lump] (due to slice key), got '{type(value)}'")
+            raise TypeError(
+                f"expected value of type Iterable[Lump] (due to slice key), got '{type(value)}'"
+            )
         if self.__closed:
             raise ClosedWAD("Attempted to operate on a closed WAD")
         self.lumps[key] = value  # ty: ignore[invalid-assignment]
 
     def __delitem__(self, key: SupportsIndex | slice_index) -> None:
         if not isinstance(key, (SupportsIndex, slice_index)):
-            raise TypeError(f"key of type '{type(key)}' must be a slice, or interpretable as an integer")
+            raise TypeError(
+                f"key of type '{type(key)}' must be a slice, or interpretable as an integer"
+            )
         if self.__closed:
             raise ClosedWAD("Attempted to operate on a closed WAD")
         del self.lumps[key]
@@ -389,9 +476,8 @@ Raises:
             return NotImplemented
         if self.__closed or other.__closed:
             raise ClosedWAD("Attempted to operate on a closed WAD")
-        if self.wad_type == WADType.UNKNOWN:
-            if other.wad_type != WADType.UNKNOWN:
-                self.wad_type = other.wad_type
+        if self.wad_type == WADType.UNKNOWN and other.wad_type != WADType.UNKNOWN:
+            self.wad_type = other.wad_type
         self.lumps += deepcopy(other.lumps)
         return self
 
@@ -409,7 +495,7 @@ Raises:
         if self.__closed:
             raise ClosedWAD("Attempted to operate on a closed WAD")
         self.lumps.append(object)
-    
+
     def clear(self) -> None:
         """Clear the WAD of all lumps"""
         if self.__closed:
@@ -436,7 +522,9 @@ Raises:
     def insert(self, index: SupportsIndex, object: Lump) -> None:
         """Insert lump before index"""
         if not isinstance(index, SupportsIndex):
-            raise TypeError(f"Expected index to be interpretable as an integer, got {type(index)}")
+            raise TypeError(
+                f"Expected index to be interpretable as an integer, got {type(index)}"
+            )
         if not isinstance(object, Lump):
             raise TypeError(f"Expected object to be Lump, got {type(object)}")
         if self.__closed:
@@ -446,7 +534,9 @@ Raises:
     def pop(self, index: SupportsIndex = -1) -> Lump:
         """Remove and return lump at index (default last), raising IndexError if index is out of range or the WAD is empty"""
         if not isinstance(index, SupportsIndex):
-            raise TypeError(f"Expected index to be interpretable as an integer, got {type(index)}")
+            raise TypeError(
+                f"Expected index to be interpretable as an integer, got {type(index)}"
+            )
         if self.__closed:
             raise ClosedWAD("Attempted to operate on a closed WAD")
         return self.lumps.pop(index)
@@ -454,6 +544,7 @@ Raises:
     def is_closed(self) -> bool:
         """Check whether this WAD is closed. Returns True if closed."""
         return self.__closed
+
 
 def open_wad(
     path: str | bytes | os.PathLike[str] | os.PathLike[bytes],
@@ -464,25 +555,30 @@ def open_wad(
 ) -> WAD:
     """Helper to open a file and deserialize it.
 
-Args:
-    path: A string or bytes, or PathLike holding a string or PathLike holding bytes.
-    dont_check_magic: A bool that specifies whether or not to check the first 4 bytes, defaults to False
-    big_endian: A bool that specifies whether to use big endian, defaults to False. Keep it False unless you know why you want this
-    read_large_files: A bool that specifies whether to disable the 2GiB safety check, defaults to False. Keep it False unless you have special reasons
+    Args:
+        path: A string or bytes, or PathLike holding a string or PathLike holding bytes.
+        dont_check_magic: A bool that specifies whether or not to check the first 4 bytes, defaults to False
+        big_endian: A bool that specifies whether to use big endian, defaults to False. Keep it False unless you know why you want this
+        read_large_files: A bool that specifies whether to disable the 2GiB safety check, defaults to False. Keep it False unless you have special reasons
 
-Returns:
-    None.
+    Returns:
+        None.
 
-Raises:
-    InvalidHeaderError: If there is something wrong with the header.
-    InvalidEntryError: If there is something wrong with an entry in the directory.
-    ReadTooHigh: If there was an attempt to read over 2 GiB of data.
-    FileTooLarge: If the stream passed is over 2GiB.
-    EOFError: If EOF is unexpectedly reached.
-    FileNotFoundError: If the file is not found.
-    PermissionError: If the user lacks permissions to read the file.
-    IsADirectoryError: If you passed a directory.
-    NotADirectoryError: If one of the components of the path is a file and not a directory.
-    UnseekableStreamError: If file is unseekable."""
+    Raises:
+        InvalidHeaderError: If there is something wrong with the header.
+        InvalidEntryError: If there is something wrong with an entry in the directory.
+        ReadTooHigh: If there was an attempt to read over 2 GiB of data.
+        FileTooLarge: If the stream passed is over 2GiB.
+        EOFError: If EOF is unexpectedly reached.
+        FileNotFoundError: If the file is not found.
+        PermissionError: If the user lacks permissions to read the file.
+        IsADirectoryError: If you passed a directory.
+        NotADirectoryError: If one of the components of the path is a file and not a directory.
+        UnseekableStreamError: If file is unseekable."""
     with open(path, "rb") as f:
-        return WAD(f, dont_check_magic=dont_check_magic, big_endian=big_endian, read_large_files=read_large_files)
+        return WAD(
+            f,
+            dont_check_magic=dont_check_magic,
+            big_endian=big_endian,
+            read_large_files=read_large_files,
+        )

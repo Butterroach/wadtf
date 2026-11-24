@@ -7,9 +7,10 @@ import binascii
 import json
 import re  # tragedy
 import sys
-import wadtf
 from pathlib import Path
 from typing import cast
+
+import wadtf
 
 UNITS: tuple[str, ...] = ("B", "KiB", "MiB", "GiB")
 
@@ -33,12 +34,16 @@ def valid_dir(value: str) -> Path:
     try:
         path = path.resolve(strict=False)
         if path.exists() and not path.is_dir():
-            raise argparse.ArgumentTypeError(f"path exists but is not a directory: {value}")
+            raise argparse.ArgumentTypeError(
+                f"path exists but is not a directory: {value}"
+            )
         for parent in path.parents:
             if not parent.is_dir():
-                raise argparse.ArgumentTypeError(f"parent {parent} of path {value} does not exist")
+                raise argparse.ArgumentTypeError(
+                    f"parent {parent} of path {value} does not exist"
+                )
     except (OSError, ValueError) as e:
-        raise argparse.ArgumentTypeError(f"{value} is not a valid path: {str(e)}")
+        raise argparse.ArgumentTypeError(f"{value} is not a valid path: {e!s}")
     return path
 
 
@@ -46,7 +51,7 @@ def bytes_pattern(value: str) -> re.Pattern[bytes]:
     try:
         return re.compile(value.encode(), re.DOTALL)
     except re.error as e:
-        raise argparse.ArgumentTypeError(f"regex pattern invalid: {str(e)}")
+        raise argparse.ArgumentTypeError(f"regex pattern invalid: {e!s}")
 
 
 def human_unit(bytes_n: int) -> str:
@@ -58,8 +63,7 @@ def human_unit(bytes_n: int) -> str:
     return f"{val:.2f} {UNITS[unit_index]}"
 
 
-DESCRIPTION: str = \
-    "Program to print info about a WAD, extract a WAD, output a single lump, search for lumps by name, and convert a WAD to JSON and vice-versa, powered by the wadtf library."
+DESCRIPTION: str = "Program to print info about a WAD, extract a WAD, output a single lump, search for lumps by name, and convert a WAD to JSON and vice-versa, powered by the wadtf library."
 
 parser: argparse.ArgumentParser
 
@@ -76,7 +80,12 @@ else:
 def handle_info(args: argparse.Namespace) -> None:
     path: Path = cast(Path, args.path)
     try:
-        with wadtf.open_wad(path, dont_check_magic=args.dont_check_magic, big_endian=args.big_endian, read_large_files=args.read_large_files) as w:
+        with wadtf.open_wad(
+            path,
+            dont_check_magic=args.dont_check_magic,
+            big_endian=args.big_endian,
+            read_large_files=args.read_large_files,
+        ) as w:
             print("file name:      ", path.name)
             print("type:           ", w.wad_type.name)
             print("file size:      ", human_unit(path.stat().st_size))
@@ -91,14 +100,19 @@ def handle_info(args: argparse.Namespace) -> None:
                 large_lump_len: int = len(large_lump.contents)
                 print(
                     "smallest lump:  ",
-                    f"{small_lump.name.decode(errors="ignore"): <8} / {small_lump_len: <{len(str(large_lump_len))}} / {small_lump.lump_type.name}"
+                    f"{small_lump.name.decode(errors='ignore'): <8} / {small_lump_len: <{len(str(large_lump_len))}} / {small_lump.lump_type.name}",
                 )
                 print(
                     "largest lump:   ",
-                    f"{large_lump.name.decode(errors="ignore"): <8} / {large_lump_len: <{len(str(large_lump_len))}} / {large_lump.lump_type.name}"
+                    f"{large_lump.name.decode(errors='ignore'): <8} / {large_lump_len: <{len(str(large_lump_len))}} / {large_lump.lump_type.name}",
                 )
-    except (wadtf.InvalidWADError, wadtf.ReadTooHigh, wadtf.FileTooLarge, EOFError) as e:
-        sys.exit(f"WAD is invalid: {str(e)}")
+    except (
+        wadtf.InvalidWADError,
+        wadtf.ReadTooHigh,
+        wadtf.FileTooLarge,
+        EOFError,
+    ) as e:
+        sys.exit(f"WAD is invalid: {e!s}")
     except PermissionError:
         sys.exit("can't open file, no permissions")
     except wadtf.UnseekableStreamError:
@@ -115,21 +129,25 @@ def handle_json(args: argparse.Namespace) -> None:
                 try:
                     data: dict[str, object] = cast(dict[str, object], json.load(f))
                 except (json.JSONDecodeError, UnicodeDecodeError) as e:
-                    sys.exit(f"json is invalid: {str(e)}")
+                    sys.exit(f"json is invalid: {e!s}")
         except OSError as e:
-            sys.exit(f"can't read file: {str(e)}")
+            sys.exit(f"can't read file: {e!s}")
         if not isinstance(data, dict):
             sys.exit(f"data is of invalid type '{type(data)}'")
         w: wadtf.WAD = wadtf.WAD()
         try:
             w.wad_type = wadtf.WADType(data["type"])
         except (ValueError, TypeError):
-            sys.exit(f"'type' value {repr(data["type"])} is not a valid wad type (which would be integer 1 or 2)")
+            sys.exit(
+                f"'type' value {data['type']!r} is not a valid wad type (which would be integer 1 or 2)"
+            )
         except KeyError:
             sys.exit("'type' is missing from json")
         if w.wad_type == wadtf.WADType.UNKNOWN:
             sys.exit("'type' is not a valid wad type (which would be integer 1 or 2)")
-        lumps: list[dict[str, str]] | None = cast(list[dict[str, str]] | None, data.get("lumps"))
+        lumps: list[dict[str, str]] | None = cast(
+            list[dict[str, str]] | None, data.get("lumps")
+        )
         if "lumps" not in data:
             sys.exit("'lumps' is missing")
         if not isinstance(lumps, list):
@@ -147,7 +165,9 @@ def handle_json(args: argparse.Namespace) -> None:
             if not isinstance(lump_name, str):
                 sys.exit(f"'name' of entry #{i} is of invalid type '{type(lump_name)}'")
             if not isinstance(lump_contents, str):
-                sys.exit(f"'contents' of entry #{i} is of invalid type '{type(lump_contents)}'")
+                sys.exit(
+                    f"'contents' of entry #{i} is of invalid type '{type(lump_contents)}'"
+                )
             lump_name, lump_contents = cast(str, lump_name), cast(str, lump_contents)
             try:
                 name: bytes = base64.a85decode(lump_name)
@@ -169,13 +189,28 @@ def handle_json(args: argparse.Namespace) -> None:
     else:
         data: dict = {}
         try:
-            with wadtf.open_wad(path, dont_check_magic=args.dont_check_magic, big_endian=args.big_endian, read_large_files=args.read_large_files) as w:
+            with wadtf.open_wad(
+                path,
+                dont_check_magic=args.dont_check_magic,
+                big_endian=args.big_endian,
+                read_large_files=args.read_large_files,
+            ) as w:
                 data["type"] = w.wad_type.value
                 data["lumps"] = []
                 for lump in w:
-                    data["lumps"].append({"name": base64.a85encode(lump.name).decode(), "contents": base64.a85encode(lump.contents).decode()})
-        except (wadtf.InvalidWADError, wadtf.ReadTooHigh, wadtf.FileTooLarge, EOFError) as e:
-            sys.exit(f"WAD is invalid: {str(e)}")
+                    data["lumps"].append(
+                        {
+                            "name": base64.a85encode(lump.name).decode(),
+                            "contents": base64.a85encode(lump.contents).decode(),
+                        }
+                    )
+        except (
+            wadtf.InvalidWADError,
+            wadtf.ReadTooHigh,
+            wadtf.FileTooLarge,
+            EOFError,
+        ) as e:
+            sys.exit(f"WAD is invalid: {e!s}")
         except PermissionError:
             sys.exit("can't open file, no permissions")
         except wadtf.UnseekableStreamError:
@@ -189,7 +224,7 @@ def handle_json(args: argparse.Namespace) -> None:
             with open(output, "wb") as f:
                 f.write(out)
         except OSError as e:
-            sys.exit(f"can't write to file: {str(e)}")
+            sys.exit(f"can't write to file: {e!s}")
 
 
 def handle_extract(args: argparse.Namespace) -> None:
@@ -201,25 +236,48 @@ def handle_extract(args: argparse.Namespace) -> None:
     except PermissionError:
         sys.exit("can't create directory, no permissions")
     except OSError as e:
-        sys.exit(f"can't create directory: {str(e)}")
+        sys.exit(f"can't create directory: {e!s}")
     try:
-        with wadtf.open_wad(path, dont_check_magic=args.dont_check_magic, big_endian=args.big_endian, read_large_files=args.read_large_files) as w:
+        with wadtf.open_wad(
+            path,
+            dont_check_magic=args.dont_check_magic,
+            big_endian=args.big_endian,
+            read_large_files=args.read_large_files,
+        ) as w:
             if len(w) != 0:
                 for i, lump in enumerate(w):
-                    print(f"{"█" * int(i / len(w) * 50):<50} | {i / len(w) * 100:.2f}%", end="\r", flush=True)  # intentional yes yes
+                    print(
+                        f"{'█' * int(i / len(w) * 50):<50} | {i / len(w) * 100:.2f}%",
+                        end="\r",
+                        flush=True,
+                    )  # intentional yes yes
                     if pattern.fullmatch(lump.name) is not None:
                         try:
-                            with open(directory_path / (base64.urlsafe_b64encode(lump.name).decode() + "." + str(i) + ".lump"), "wb") as f:
+                            with open(
+                                directory_path
+                                / (
+                                    base64.urlsafe_b64encode(lump.name).decode()
+                                    + "."
+                                    + str(i)
+                                    + ".lump"
+                                ),
+                                "wb",
+                            ) as f:
                                 f.write(lump.contents)
                         except OSError as e:
-                            sys.exit(f"can't write to file: {str(e)}")
-    except (wadtf.InvalidWADError, wadtf.ReadTooHigh, wadtf.FileTooLarge, EOFError) as e:
-        sys.exit(f"WAD is invalid: {str(e)}")
+                            sys.exit(f"can't write to file: {e!s}")
+    except (
+        wadtf.InvalidWADError,
+        wadtf.ReadTooHigh,
+        wadtf.FileTooLarge,
+        EOFError,
+    ) as e:
+        sys.exit(f"WAD is invalid: {e!s}")
     except PermissionError:
         sys.exit("can't open file, no permissions")
     except wadtf.UnseekableStreamError:
         sys.exit("file is unseekable")
-    print(f"{"█" * 50} | 100.00%", flush=True)
+    print(f"{'█' * 50} | 100.00%", flush=True)
 
 
 def handle_lump(args: argparse.Namespace) -> None:
@@ -227,7 +285,12 @@ def handle_lump(args: argparse.Namespace) -> None:
     index: int = cast(int, args.index)
     output: Path | None = None if args.output is None else cast(Path, args.output)
     try:
-        with wadtf.open_wad(path, dont_check_magic=args.dont_check_magic, big_endian=args.big_endian, read_large_files=args.read_large_files) as w:
+        with wadtf.open_wad(
+            path,
+            dont_check_magic=args.dont_check_magic,
+            big_endian=args.big_endian,
+            read_large_files=args.read_large_files,
+        ) as w:
             try:
                 lump_contents: bytes | bytearray = w[index].contents
             except IndexError:
@@ -240,9 +303,14 @@ def handle_lump(args: argparse.Namespace) -> None:
                     with open(output, "wb") as f:
                         f.write(lump_contents)
                 except OSError as e:
-                    sys.exit(f"can't write to file: {str(e)}")
-    except (wadtf.InvalidWADError, wadtf.ReadTooHigh, wadtf.FileTooLarge, EOFError) as e:
-        sys.exit(f"WAD is invalid: {str(e)}")
+                    sys.exit(f"can't write to file: {e!s}")
+    except (
+        wadtf.InvalidWADError,
+        wadtf.ReadTooHigh,
+        wadtf.FileTooLarge,
+        EOFError,
+    ) as e:
+        sys.exit(f"WAD is invalid: {e!s}")
     except PermissionError:
         sys.exit("can't open file, no permissions")
     except wadtf.UnseekableStreamError:
@@ -253,83 +321,169 @@ def handle_search(args: argparse.Namespace) -> None:
     path: Path = cast(Path, args.path)
     pattern: re.Pattern[bytes] = cast(re.Pattern[bytes], args.pattern)
     try:
-        with wadtf.open_wad(path, dont_check_magic=args.dont_check_magic, big_endian=args.big_endian, read_large_files=args.read_large_files) as w:
+        with wadtf.open_wad(
+            path,
+            dont_check_magic=args.dont_check_magic,
+            big_endian=args.big_endian,
+            read_large_files=args.read_large_files,
+        ) as w:
             for i, lump in enumerate(w):
                 if pattern.fullmatch(lump.name) is not None:
                     print(i)
-    except (wadtf.InvalidWADError, wadtf.ReadTooHigh, wadtf.FileTooLarge, EOFError) as e:
-        sys.exit(f"WAD is invalid: {str(e)}")
+    except (
+        wadtf.InvalidWADError,
+        wadtf.ReadTooHigh,
+        wadtf.FileTooLarge,
+        EOFError,
+    ) as e:
+        sys.exit(f"WAD is invalid: {e!s}")
     except PermissionError:
         sys.exit("can't open file, no permissions")
     except wadtf.UnseekableStreamError:
         sys.exit("file is unseekable")
 
 
-subparsers = parser.add_subparsers(dest="command", required=True, help="Available commands")
+subparsers = parser.add_subparsers(
+    dest="command", required=True, help="Available commands"
+)
 
 info_parser = subparsers.add_parser("info", help="Print info about a WAD")
 info_parser.add_argument("path", help="Path to WAD file", type=existing_file)
-info_parser.add_argument("-b", "--big-endian", action="store_true", help="Use big endian instead of little endian")
-info_parser.add_argument("-d", "--dont-check-magic", action="store_true", help="Don't check the magic string of the file")
+info_parser.add_argument(
+    "-b",
+    "--big-endian",
+    action="store_true",
+    help="Use big endian instead of little endian",
+)
+info_parser.add_argument(
+    "-d",
+    "--dont-check-magic",
+    action="store_true",
+    help="Don't check the magic string of the file",
+)
 info_parser.add_argument(
     "--read-large-files",
     action="store_true",
-    help="Don't do the safety check for large reads (don't use unless you know why you want this)"
+    help="Don't do the safety check for large reads (don't use unless you know why you want this)",
 )
 info_parser.set_defaults(func=handle_info)
 
 json_parser = subparsers.add_parser("json", help="Convert WAD from and to JSON")
 json_parser.add_argument("path", help="Path to file", type=existing_file)
-json_parser.add_argument("-r", "--reverse", action="store_true", help="Convert from JSON to WAD instead of from WAD to JSON")
-json_parser.add_argument("-b", "--big-endian", action="store_true", help="Use big endian instead of little endian")
-json_parser.add_argument("-d", "--dont-check-magic", action="store_true", help="Don't check the magic string of the file if reading a WAD file")
+json_parser.add_argument(
+    "-r",
+    "--reverse",
+    action="store_true",
+    help="Convert from JSON to WAD instead of from WAD to JSON",
+)
+json_parser.add_argument(
+    "-b",
+    "--big-endian",
+    action="store_true",
+    help="Use big endian instead of little endian",
+)
+json_parser.add_argument(
+    "-d",
+    "--dont-check-magic",
+    action="store_true",
+    help="Don't check the magic string of the file if reading a WAD file",
+)
 json_parser.add_argument(
     "--read-large-files",
     action="store_true",
-    help="Don't do the safety check for large reads if reading a WAD file (don't use unless you know why you want this)"
+    help="Don't do the safety check for large reads if reading a WAD file (don't use unless you know why you want this)",
 )
-json_parser.add_argument("-o", "--output", help="Path to output file, if omitted will output to stdout", type=valid_file, default=None)
+json_parser.add_argument(
+    "-o",
+    "--output",
+    help="Path to output file, if omitted will output to stdout",
+    type=valid_file,
+    default=None,
+)
 json_parser.set_defaults(func=handle_json)
 
-extract_parser = subparsers.add_parser("extract", help="Extract a WAD's lumps to a directory")
+extract_parser = subparsers.add_parser(
+    "extract", help="Extract a WAD's lumps to a directory"
+)
 extract_parser.add_argument("wad", help="Path to WAD file", type=existing_file)
 extract_parser.add_argument("dir", help="Path to directory", type=valid_dir)
 extract_parser.add_argument(
-    "-p", "--pattern",
+    "-p",
+    "--pattern",
     help="Optional Python regex pattern to match on lump names, use `.*` to match everything (default)",
-    type=bytes_pattern, default=bytes_pattern(".*"),
+    type=bytes_pattern,
+    default=bytes_pattern(".*"),
 )
-extract_parser.add_argument("-b", "--big-endian", action="store_true", help="Use big endian instead of little endian")
-extract_parser.add_argument("-d", "--dont-check-magic", action="store_true", help="Don't check the magic string of the file")
+extract_parser.add_argument(
+    "-b",
+    "--big-endian",
+    action="store_true",
+    help="Use big endian instead of little endian",
+)
+extract_parser.add_argument(
+    "-d",
+    "--dont-check-magic",
+    action="store_true",
+    help="Don't check the magic string of the file",
+)
 extract_parser.add_argument(
     "--read-large-files",
     action="store_true",
-    help="Don't do the safety check for large reads (don't use unless you know why you want this)"
+    help="Don't do the safety check for large reads (don't use unless you know why you want this)",
 )
 extract_parser.set_defaults(func=handle_extract)
 
 lump_parser = subparsers.add_parser("lump", help="Output a single lump's contents")
 lump_parser.add_argument("path", help="Path to WAD file", type=existing_file)
 lump_parser.add_argument("index", help="Lump index", type=int)
-lump_parser.add_argument("-b", "--big-endian", action="store_true", help="Use big endian instead of little endian")
-lump_parser.add_argument("-d", "--dont-check-magic", action="store_true", help="Don't check the magic string of the file")
+lump_parser.add_argument(
+    "-b",
+    "--big-endian",
+    action="store_true",
+    help="Use big endian instead of little endian",
+)
+lump_parser.add_argument(
+    "-d",
+    "--dont-check-magic",
+    action="store_true",
+    help="Don't check the magic string of the file",
+)
 lump_parser.add_argument(
     "--read-large-files",
     action="store_true",
-    help="Don't do the safety check for large reads (don't use unless you know why you want this)"
+    help="Don't do the safety check for large reads (don't use unless you know why you want this)",
 )
-lump_parser.add_argument("-o", "--output", help="Path to output file, if omitted will output to stdout", type=valid_file, default=None)
+lump_parser.add_argument(
+    "-o",
+    "--output",
+    help="Path to output file, if omitted will output to stdout",
+    type=valid_file,
+    default=None,
+)
 lump_parser.set_defaults(func=handle_lump)
 
-search_parser = subparsers.add_parser("search", help="Search for lumps by matching their names with regex and output their indices")
+search_parser = subparsers.add_parser(
+    "search",
+    help="Search for lumps by matching their names with regex and output their indices",
+)
 search_parser.add_argument("path", help="Path to WAD file", type=existing_file)
 search_parser.add_argument("pattern", help="Python regex pattern", type=bytes_pattern)
-search_parser.add_argument("-b", "--big-endian", action="store_true", help="Use big endian instead of little endian")
-search_parser.add_argument("-d", "--dont-check-magic", action="store_true", help="Don't check the magic string of the file")
+search_parser.add_argument(
+    "-b",
+    "--big-endian",
+    action="store_true",
+    help="Use big endian instead of little endian",
+)
+search_parser.add_argument(
+    "-d",
+    "--dont-check-magic",
+    action="store_true",
+    help="Don't check the magic string of the file",
+)
 search_parser.add_argument(
     "--read-large-files",
     action="store_true",
-    help="Don't do the safety check for large reads (don't use unless you know why you want this)"
+    help="Don't do the safety check for large reads (don't use unless you know why you want this)",
 )
 search_parser.set_defaults(func=handle_search)
 

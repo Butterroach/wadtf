@@ -33,7 +33,7 @@ A WAD object with this type can NOT be saved, you must set its type first."""
 class LumpType(Enum):
     """Lump type enum. Based on markers/size and NOT actual contents!
 
-Intentionally excludes patches as its markers not actually used by engine and are unreliable."""
+    Intentionally excludes patches as its markers not actually used by engine and are unreliable."""
 
     NONE = auto()
     """No other defined types apply to it.

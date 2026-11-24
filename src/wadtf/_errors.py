@@ -1,6 +1,7 @@
 # Copyright(c) Butterroach 2026
 # SPDX-License-Identifier: Apache-2.0
 
+
 class ClosedWAD(ValueError):
     """Attempted to do something on a closed WAD"""
 
