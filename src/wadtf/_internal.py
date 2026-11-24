@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 else:
     slice_index = slice
 
-__all__ = ["ClosedWAD", "TooLargeToSerialize", "InvalidLumpError", "UnserializableType", "ReadTooHigh", "InvalidEntryError", "InvalidHeaderError", "SeekableReadableBinaryIO", "WritableBinaryIO", "WADType", "LumpType", "Lump", "WAD", "open_wad", "FileTooLarge"]
+__all__ = ["ClosedWAD", "TooLargeToSerialize", "InvalidLumpError", "UnserializableType", "ReadTooHigh", "InvalidEntryError", "InvalidHeaderError", "SeekableReadableBinaryIO", "WritableBinaryIO", "WADType", "LumpType", "Lump", "WAD", "open_wad", "FileTooLarge", "UnseekableStreamError"]
 
 
 class WAD:
@@ -37,7 +37,8 @@ Raises:
     InvalidEntryError: If there is something wrong with an entry in the directory.
     ReadTooHigh: If there was an attempt to read over 2 GiB of data.
     FileTooLarge: If the stream passed is over 2GiB.
-    EOFError: If EOF is unexpectedly reached."""
+    EOFError: If EOF is unexpectedly reached.
+    UnseekableStreamError: If stream is unseekable."""
 
     lumps: list[Lump]
     """Internal directory. You can directly modify this too instead of using the instance methods!"""
@@ -53,6 +54,9 @@ Raises:
             # lol
             self.wad_type = WADType.PWAD
             return
+        
+        if not stream.seekable():
+            raise UnseekableStreamError("stream is not seekable")
 
         stream.seek(0)
 
@@ -457,6 +461,26 @@ def open_wad(
     big_endian: bool = False,
     read_large_files: bool = False,
 ) -> WAD:
-    """Helper to open a file and deserialize it. See WAD for the keyword args."""
+    """Helper to open a file and deserialize it.
+
+Args:
+    path: A string or bytes, or PathLike holding a string or PathLike holding bytes.
+    dont_check_magic: A bool that specifies whether or not to check the first 4 bytes, defaults to False
+    big_endian: A bool that specifies whether to use big endian, defaults to False. Keep it False unless you know why you want this
+    read_large_files: A bool that specifies whether to disable the 2GiB safety check, defaults to False. Keep it False unless you have special reasons
+
+Returns:
+    None.
+
+Raises:
+    InvalidHeaderError: If there is something wrong with the header.
+    InvalidEntryError: If there is something wrong with an entry in the directory.
+    ReadTooHigh: If there was an attempt to read over 2 GiB of data.
+    FileTooLarge: If the stream passed is over 2GiB.
+    EOFError: If EOF is unexpectedly reached.
+    FileNotFoundError: If the file is not found.
+    PermissionError: If the user lacks permissions to read the file.
+    IsADirectoryError: If you passed a directory.
+    NotADirectoryError: If one of the components of the path is a file and not a directory."""
     with open(path, "rb") as f:
         return WAD(f, dont_check_magic=dont_check_magic, big_endian=big_endian, read_large_files=read_large_files)

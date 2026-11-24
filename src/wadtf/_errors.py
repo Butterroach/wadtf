@@ -39,3 +39,7 @@ class FileTooLarge(ValueError):
 
 class NegativeSeek(ValueError):
     """Somehow seeked to a negative number. That shouldn't happen. You might want to run memtest"""
+
+
+class UnseekableStreamError(ValueError):
+    """You passed an unseekable stream and that's not nice."""
