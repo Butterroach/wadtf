@@ -343,6 +343,49 @@ def handle_search(args: argparse.Namespace) -> None:
         sys.exit("file is unseekable")
 
 
+def handle_equal(args: argparse.Namespace) -> None:
+    path1: Path = cast(Path, args.path1)
+    path2: Path = cast(Path, args.path2)
+    try:
+        with wadtf.open_wad(
+            path1,
+            dont_check_magic=args.dont_check_magic,
+            big_endian=args.big_endian,
+            read_large_files=args.read_large_files,
+        ) as w1:
+            try:
+                with wadtf.open_wad(
+                    path2,
+                    dont_check_magic=args.dont_check_magic,
+                    big_endian=args.big_endian,
+                    read_large_files=args.read_large_files,
+                ) as w2:
+                    if w1 != w2:
+                        sys.exit(1)
+            except (
+                wadtf.InvalidWADError,
+                wadtf.ReadTooHigh,
+                wadtf.FileTooLarge,
+                EOFError,
+            ) as e:
+                sys.exit(f"second WAD is invalid: {e!s}")
+            except PermissionError:
+                sys.exit("can't open second file, no permissions")
+            except wadtf.UnseekableStreamError:
+                sys.exit("second file is unseekable")
+    except (
+        wadtf.InvalidWADError,
+        wadtf.ReadTooHigh,
+        wadtf.FileTooLarge,
+        EOFError,
+    ) as e:
+        sys.exit(f"first WAD is invalid: {e!s}")
+    except PermissionError:
+        sys.exit("can't open first file, no permissions")
+    except wadtf.UnseekableStreamError:
+        sys.exit("first file is unseekable")
+
+
 subparsers = parser.add_subparsers(
     dest="command", required=True, help="Available commands"
 )
@@ -487,7 +530,32 @@ search_parser.add_argument(
 )
 search_parser.set_defaults(func=handle_search)
 
+equal_parser = subparsers.add_parser("equal", help="Check if two WADs are equal. Exit with 0 if equal, otherwise 1.")
+equal_parser.add_argument("path1", help="Path to first WAD file", type=existing_file)
+equal_parser.add_argument("path2", help="Path to second WAD file", type=existing_file)
+equal_parser.add_argument(
+    "-b",
+    "--big-endian",
+    action="store_true",
+    help="Use big endian instead of little endian",
+)
+equal_parser.add_argument(
+    "-d",
+    "--dont-check-magic",
+    action="store_true",
+    help="Don't check the magic string of the file",
+)
+equal_parser.add_argument(
+    "--read-large-files",
+    action="store_true",
+    help="Don't do the safety check for large reads (don't use unless you know why you want this)",
+)
+equal_parser.set_defaults(func=handle_equal)
+
 
 def main() -> None:
     args = parser.parse_args()
     args.func(args)
+
+
+# packaging entry point calls main()
