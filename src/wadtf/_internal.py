@@ -233,7 +233,8 @@ Returns:
 Raises:
     UnserializableType: If the WAD type is unserializable and magic was not provided.
     ValueError: If magic is not 4 bytes.
-    TypeError: If magic is not bytes or bytearray."""
+    TypeError: If magic is not bytes or bytearray.
+    InvalidLumpError: If there's something wrong with a lump"""
 
         if self.__closed:
             raise ClosedWAD("Attempted to operate on a closed WAD")
@@ -481,6 +482,7 @@ Raises:
     FileNotFoundError: If the file is not found.
     PermissionError: If the user lacks permissions to read the file.
     IsADirectoryError: If you passed a directory.
-    NotADirectoryError: If one of the components of the path is a file and not a directory."""
+    NotADirectoryError: If one of the components of the path is a file and not a directory.
+    UnseekableStreamError: If file is unseekable."""
     with open(path, "rb") as f:
         return WAD(f, dont_check_magic=dont_check_magic, big_endian=big_endian, read_large_files=read_large_files)

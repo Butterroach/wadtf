@@ -108,6 +108,10 @@ with wadtf.open_wad("wadtf_second_demo.wad") as w:
 
 Most functions also have useful docstrings, and you can check out `src/wadtf/_cli.py` for more examples and error handling.
 
+## Why is this Python 3.12+ only?
+
+I hate Python 3.11 so much
+
 ## When did you finish v1.0.0?
 
 <!-- TODO -->
