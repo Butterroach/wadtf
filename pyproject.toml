@@ -1,6 +1,6 @@
 [project]
 name = "wadtf"
-version = "1.0.0.post1"
+version = "1.0.0.post2"
 description = "Easy-to-use library to safely read, create, modify, and write WAD files"
 readme = "README.md"
 authors = [
@@ -21,6 +21,11 @@ classifiers = [
     "Intended Audience :: Developers",
     "Operating System :: OS Independent",
 ]
+
+[project.urls]
+Homepage = "https://github.com/Butterroach/wadtf"
+Source = "https://github.com/Butterroach/wadtf"
+Issues = "https://github.com/Butterroach/wadtf/issues"
 
 [build-system]
 requires = ["uv_build>=0.11.11,<0.12.0"]
