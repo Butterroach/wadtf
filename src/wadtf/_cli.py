@@ -152,7 +152,7 @@ def handle_json(args: argparse.Namespace) -> None:
             sys.exit("'lumps' is missing")
         if not isinstance(lumps, list):
             sys.exit(f"'lumps' is of invalid type '{type(lumps)}'")
-        lumps = cast(list[dict[str, str]], lumps)
+        lumps = cast(list[dict[str, str]], lumps)  # type: ignore[redundant-cast]  # ty: ignore[unused-ignore-statement]
         for i, entry in enumerate(lumps):
             if not isinstance(entry, dict):
                 sys.exit(f"entry #{i} is of invalid type '{type(entry)}'")
@@ -168,7 +168,7 @@ def handle_json(args: argparse.Namespace) -> None:
                 sys.exit(
                     f"'contents' of entry #{i} is of invalid type '{type(lump_contents)}'"
                 )
-            lump_name, lump_contents = cast(str, lump_name), cast(str, lump_contents)
+            lump_name, lump_contents = cast(str, lump_name), cast(str, lump_contents)  # type: ignore[redundant-cast]  # ty: ignore[unused-ignore-statement]
             try:
                 name: bytes = base64.a85decode(lump_name)
             except (ValueError, binascii.Error):
@@ -187,7 +187,7 @@ def handle_json(args: argparse.Namespace) -> None:
             print(str(e), file=sys.stderr)
             sys.exit(1)
     else:
-        data: dict = {}
+        data: dict[str, object] = {}  # type: ignore[no-redef]  # ty: ignore[unused-ignore-statement]
         try:
             with wadtf.open_wad(
                 path,
@@ -198,7 +198,7 @@ def handle_json(args: argparse.Namespace) -> None:
                 data["type"] = w.wad_type.value
                 data["lumps"] = []
                 for lump in w:
-                    data["lumps"].append(
+                    data["lumps"].append(  # type: ignore[attr-defined]  # ty: ignore[unused-ignore-statement]
                         {
                             "name": base64.a85encode(lump.name).decode(),
                             "contents": base64.a85encode(lump.contents).decode(),

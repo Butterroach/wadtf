@@ -27,6 +27,7 @@ __all__ = [
     "InvalidEntryError",
     "InvalidHeaderError",
     "InvalidLumpError",
+    "InvalidWADError",
     "Lump",
     "LumpType",
     "ReadTooHigh",
@@ -419,7 +420,7 @@ class WAD:
     @overload
     def __getitem__(self, index: slice_index) -> list[Lump]: ...
     def __getitem__(self, key: SupportsIndex | slice_index) -> Lump | list[Lump]:
-        if not isinstance(key, (SupportsIndex, slice_index)):
+        if not isinstance(key, (SupportsIndex, slice_index)):  # type: ignore  # ty: ignore[unused-ignore-comment]
             raise TypeError(
                 f"key of type '{type(key)}' must be a slice, or interpretable as an integer"
             )
@@ -434,22 +435,22 @@ class WAD:
     def __setitem__(
         self, key: SupportsIndex | slice_index, value: Lump | Iterable[Lump]
     ) -> None:
-        if not isinstance(key, (SupportsIndex, slice_index)):
+        if not isinstance(key, (SupportsIndex, slice_index)):  # type: ignore  # ty: ignore[unused-ignore-comment]
             raise TypeError(
                 f"key of type '{type(key)}' must be a slice, or interpretable as an integer"
             )
         if isinstance(key, SupportsIndex) and not isinstance(value, Lump):
             raise TypeError(f"expected value of type Lump, got '{type(value)}'")
-        if isinstance(key, slice_index) and not isinstance(value, Iterable[Lump]):
+        if isinstance(key, slice_index) and not isinstance(value, Iterable):  # type: ignore  # ty: ignore[unused-ignore-comment]
             raise TypeError(
-                f"expected value of type Iterable[Lump] (due to slice key), got '{type(value)}'"
+                f"expected Iterable value (due to slice key), got '{type(value)}'"
             )
         if self.__closed:
             raise ClosedWAD("Attempted to operate on a closed WAD")
-        self.lumps[key] = value  # ty: ignore[invalid-assignment]
+        self.lumps[key] = value  # type: ignore
 
     def __delitem__(self, key: SupportsIndex | slice_index) -> None:
-        if not isinstance(key, (SupportsIndex, slice_index)):
+        if not isinstance(key, (SupportsIndex, slice_index)):  # type: ignore  # ty: ignore[unused-ignore-comment]
             raise TypeError(
                 f"key of type '{type(key)}' must be a slice, or interpretable as an integer"
             )
